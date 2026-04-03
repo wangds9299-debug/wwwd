@@ -57,7 +57,11 @@
 
       const pollStatus = async (id) => {
         try {
-          const res = await fetch(`https://api.wuyinkeji.com/api/async/detail?key=${encodeURIComponent(apiKey)}&id=${encodeURIComponent(id)}`);
+          const res = await fetch(`https://api.wuyinkeji.com/api/async/detail?id=${encodeURIComponent(id)}`, {
+            headers: {
+              'Authorization': apiKey
+            }
+          });
           const data = await res.json();
 
           console.log("Detail API response:", data);
@@ -133,6 +137,7 @@
         const urls = urlsText.split('\n').map(u => u.trim()).filter(u => u);
 
         const payload = {
+            key: apiKey,
           prompt,
           size,
           aspectRatio
@@ -142,10 +147,11 @@
         }
 
         try {
-          const res = await fetch(`https://api.wuyinkeji.com/api/async/image_nanoBanana2?key=${encodeURIComponent(apiKey)}`, {
+            const res = await fetch(`https://api.wuyinkeji.com/api/async/image_nanoBanana2`, {
             method: 'POST',
             headers: {
-              'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Authorization': apiKey
             },
             body: JSON.stringify(payload)
           });
