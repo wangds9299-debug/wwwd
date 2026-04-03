@@ -1,966 +1,368 @@
-<!DOCTYPE html>  
-<html lang="zh-CN">  
-<head>  
-  <meta charset="UTF-8">  
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">  
-  <title>iOS 26 壁纸预览工具</title>  
-    
-  <script src="https://cdn.tailwindcss.com"></script>  
-    
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>  
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>  
-    
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>  
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI作图工具 - 设计师专版</title>
   
-  <style>  
-    @import url('https://fonts.cdnfonts.com/css/sf-pro-display');  
-    body {  
-      margin: 0;  
-      padding: 0;  
-      background-color: #ffffff;  
-    }  
-    @keyframes fadeIn {  
-      from { opacity: 0; }  
-      to { opacity: 1; }  
-    }  
-    .animate-fade-in {  
-      animation: fadeIn 0.3s ease-in-out;  
-    }  
-  </style>  
-</head>  
-<body>  
-  <div id="root"></div>  
+  <script src="https://cdn.tailwindcss.com"></script>
   
-  <script type="text/babel">  
-    const { useState, useEffect, useRef } = React;  
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   
-    const UploadIcon = () => (  
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">  
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>  
-        <polyline points="17 8 12 3 7 8"></polyline>  
-        <line x1="12" y1="3" x2="12" y2="15"></line>  
-      </svg>  
-    );  
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #f3f4f6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .spinner {
+      border: 4px solid rgba(0, 0, 0, 0.1);
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border-left-color: #3b82f6;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
   
-    // --- 安全的默认 Base64 资源，已在底层 SVG 代码中注入了绝对宽高防爆 ---  
-    const TRANSPARENT_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";  
-    const DEFAULT_SIGNAL = "data:image/svg+xml;charset=utf-8,%3Csvg width='17' height='11' viewBox='0 0 17 11' fill='white' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='0' y='7' width='3' height='4' rx='1'/%3E%3Crect x='4.5' y='4.5' width='3' height='6.5' rx='1'/%3E%3Crect x='9' y='2' width='3' height='9' rx='1'/%3E%3Crect x='13.5' y='0' width='3' height='11' rx='1'/%3E%3C/svg%3E";  
-    const DEFAULT_WIFI = "data:image/svg+xml;charset=utf-8,%3Csvg width='16' height='12' viewBox='0 0 16 12' fill='white' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M8 12C8.5 12 9 11.5 9 11C9 10.4 8.5 10 8 10C7.4 10 7 10.4 7 11C7 11.5 7.4 12 8 12Z'/%3E%3Cpath d='M4 8.5C6.2 6.6 9.8 6.6 12 8.5' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3Cpath d='M1.5 5.5C5 2.5 10.9 2.5 14.5 5.5' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E";  
-    const DEFAULT_BATTERY = "data:image/svg+xml;charset=utf-8,%3Csvg width='28' height='14' viewBox='-1 -0.5 28 14' fill='white' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='none' stroke='white' stroke-opacity='0.4' stroke-width='1' d='M5.4 0L19.5 0C21.3 0 22 0.2 22.8 0.5C23.5 0.9 24 1.4 24.4 2.1C24.8 2.9 25 3.6 25 5.4L25 7.5C25 9.3 24.8 10 24.4 10.8C24 11.5 23.5 12 22.8 12.4C22 12.8 21.3 13 19.5 13L5.4 13C3.6 13 2.9 12.8 2.2 12.4C1.5 12 0.9 11.5 0.5 10.8C0.2 10 0 9.3 0 7.5L0 5.4C0 3.6 0.2 2.9 0.5 2.1C0.9 1.4 1.5 0.9 2.2 0.5C2.9 0.2 3.6 0 5.4 0Z'/%3E%3Crect x='1.8' y='1.8' width='19' height='9.4' rx='2.5'/%3E%3Cpath d='M25.5 4.5v4a2 2 0 000-4z' fill-opacity='0.4'/%3E%3C/svg%3E";  
-  
-    const getImageDimensions = (url) => {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve({ width: img.width, height: img.height });
-        img.onerror = reject;
-        img.src = url;
-      });
-    };
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
 
-    const calculateOptimalScale = (imgWidth, imgHeight) => {
-      const containerWidth = 393;
-      const containerHeight = 852;
-      const imgRatio = imgWidth / imgHeight;
-      const containerRatio = containerWidth / containerHeight;
+    function App() {
+      const [apiKey, setApiKey] = useState(localStorage.getItem('ai_api_key') || '');
+      const [prompt, setPrompt] = useState('');
+      const [size, setSize] = useState('1K');
+      const [aspectRatio, setAspectRatio] = useState('auto');
+      const [urlsText, setUrlsText] = useState('');
       
-      let scale = 100;
-      if (imgRatio > containerRatio) {
-        scale = (containerHeight * imgRatio / containerWidth) * 100;
-      } else {
-        scale = 100;
-      }
-      return Math.max(100, Math.ceil(scale));
-    };
+      const [status, setStatus] = useState('idle'); // idle, submitting, polling, success, error
+      const [errorMsg, setErrorMsg] = useState('');
+      const [taskId, setTaskId] = useState('');
+      const [resultImage, setResultImage] = useState('');
+      const [progressMsg, setProgressMsg] = useState('');
 
-    // --- 本地原图映射 ---  
-    const HOME_APPS = [  
-      { id: 'facetime', name: 'FaceTime', img: 'facetime-iOS-Default.png' },  
-      { id: 'calendar', name: 'Calendar', img: 'calendar-iOS-Default.png' },  
-      { id: 'photos', name: 'Photos', img: 'photos-iOS-Default.png' },  
-      { id: 'camera', name: 'Camera', img: 'camera-iOS-Default.png' },  
-      { id: 'mail', name: 'Mail', img: 'mail-iOS-Default.png' },  
-      { id: 'notes', name: 'Notes', img: 'notes-iOS-Default.png' },  
-      { id: 'reminders', name: 'Reminders', img: 'reminders-iOS-Default.png' },  
-      { id: 'clock', name: 'Clock', img: 'clock-iOS-Default.png' },  
-    ];  
-  
-    const DOCK_APPS = [  
-      { id: 'facetime', name: 'FaceTime', img: 'facetime-iOS-Default.png' },  
-      { id: 'mail', name: 'Mail', img: 'mail-iOS-Default.png' },  
-      { id: 'photos', name: 'Photos', img: 'photos-iOS-Default.png' },  
-      { id: 'clock', name: 'Clock', img: 'clock-iOS-Default.png' },  
-    ];  
-  
-    const DEFAULT_LOCK_WP = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop";  
-    const DEFAULT_HOME_WP = "https://images.unsplash.com/photo-1557672172-298e090bd0f1?q=80&w=2487&auto=format&fit=crop";  
-  
-    const getIconStyle = (isDark, isActive) => {  
-      if (!isDark && !isActive) return { mixBlendMode: 'screen', filter: 'none' };  
-      if (!isDark && isActive) return { mixBlendMode: 'multiply', filter: 'invert(1)' };  
-      if (isDark && !isActive) return { mixBlendMode: 'multiply', filter: 'invert(1)' };  
-      if (isDark && isActive) return { mixBlendMode: 'screen', filter: 'none' };  
-    };  
-  
-    const SliderControl = ({ label, value, min, max, step, onChange }) => (  
-      <div className="flex flex-col gap-1">  
-        <div className="flex justify-between text-[11px] text-[#8e8e93]"><span>{label}</span><span>{value}</span></div>  
-        <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))} className="accent-[#007aff] h-[3px] cursor-pointer" />  
-      </div>  
-    );  
-  
-    // --- 状态栏渲染器：回归标准，抛弃所有可能消失的嵌套，纯 img 标签渲染 ---  
-    const StatusBarIcons = ({ theme, iconMap, bat }) => {  
-      const sigW = Math.round(bat.signal * 1.54 * 10) / 10;  
-      const wifiW = Math.round(bat.wifi * 1.33 * 10) / 10;  
-      const batW = Math.round(bat.height * 2.1 * 10) / 10;  
-        
-      const sigSrc = iconMap['Cellular Connection.svg'] || 'Cellular Connection.svg';  
-      const wifiSrc = iconMap['Wifi.svg'] || 'Wifi.svg';  
-      const batSrc = iconMap['资源 1.svg'] || '资源 1.svg';  
-  
-      return (  
-        <div className="flex items-center gap-[6.5px] transition-all" style={{ filter: theme === 'black' ? 'invert(1)' : 'none' }}>  
-          <img src={sigSrc} alt="Signal" style={{ width: `${sigW}px`, height: `${bat.signal}px`, objectFit: 'contain', flexShrink: 0, display: 'block' }} onError={(e) => { e.target.src = DEFAULT_SIGNAL; }} />  
-          <img src={wifiSrc} alt="WiFi" style={{ width: `${wifiW}px`, height: `${bat.wifi}px`, objectFit: 'contain', flexShrink: 0, display: 'block' }} onError={(e) => { e.target.src = DEFAULT_WIFI; }} />  
-          <img src={batSrc} alt="Battery" className="z-20" style={{ width: `${batW}px`, height: `${bat.height}px`, objectFit: 'contain', flexShrink: 0, display: 'block' }} onError={(e) => { e.target.src = DEFAULT_BATTERY; }} />  
-        </div>  
-      );  
-    };  
-  
-    function App() {  
-      const [activeTab, setActiveTab] = useState('lock');   
-      const [currentView, setCurrentView] = useState('lock');   
-  
-      const [wp, setWp] = useState({  
-        lock: { url: DEFAULT_LOCK_WP, scale: 100, x: 0, y: 0 },  
-        home: { url: DEFAULT_HOME_WP, scale: 100, x: 0, y: 0 }  
-      });  
-  
-      const [timeFontWeight, setTimeFontWeight] = useState(100);  
-      const [timeStretch, setTimeStretch] = useState(100);  
-      const [lockTheme, setLockTheme] = useState('light');  
-      const [homeTheme, setHomeTheme] = useState('light');  
-      const [lockTopTheme, setLockTopTheme] = useState('light');  
-      const [homeTopTheme, setHomeTopTheme] = useState('light');  
-      const [bat, setBat] = useState({ height: 14.5, wifi: 17.5, signal: 14.5 });   
-      const [flashlightOn, setFlashlightOn] = useState(false);  
-      const [iconMap, setIconMap] = useState({});  
-      const [toastMsg, setToastMsg] = useState('');  
-      const [canvasBg, setCanvasBg] = useState('#f2f2f7');  
-        
-      const [isExporting, setIsExporting] = useState(false);  
-      const [exportImage, setExportImage] = useState(null);  
-      const [exportDimensions, setExportDimensions] = useState({ width: 750, height: 1000 });
-      const [isBatchProcessing, setIsBatchProcessing] = useState(false);
-      const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, message: '' });
-        
-      const [currentTime, setCurrentTime] = useState(new Date());  
-      const screenRef = useRef(null);  
-      const phoneWrapRef = useRef(null);  
-      const doubleWrapRef = useRef(null);
-      const toastTimer = useRef(null);  
-  
-      useEffect(() => {  
-        if (!window.html2canvas) {
-          const script = document.createElement('script');
-          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-          script.async = true;
-          document.body.appendChild(script);
-        }  
-          
-        const timer = setInterval(() => setCurrentTime(new Date()), 10000);  
-        return () => clearInterval(timer);  
-      }, []);  
-  
-      const formatTime = (date) => {  
-        let hours = date.getHours();  
-        let minutes = date.getMinutes();  
-        return `${hours < 10 ? '0'+hours : hours}:${minutes < 10 ? '0'+minutes : minutes}`;  
-      };  
-  
-      const formatDate = (date) => {  
-        const options = { weekday: 'long', month: 'long', day: 'numeric' };  
-        return date.toLocaleDateString('en-US', options);  
-      };  
-  
-      const showToast = (msg) => {  
-        setToastMsg(msg);  
-        if(toastTimer.current) clearTimeout(toastTimer.current);  
-        toastTimer.current = setTimeout(() => setToastMsg(''), 1800);  
-      };  
-  
-      const handleImageUpload = (e, target) => {  
-        const file = e.target.files[0];  
-        if (file) {  
-          const reader = new FileReader();  
-          reader.onload = (evt) => {  
-            setWp(prev => ({ ...prev, [target]: { url: evt.target.result, scale: 100, x: 0, y: 0 } }));  
-            showToast('壁纸已更新');  
-          };  
-          reader.readAsDataURL(file);  
-        }  
-      };  
-  
-      const handleWpChange = (target, field, value) => {  
-        setWp(prev => ({  
-          ...prev,  
-          [target]: { ...prev[target], [field]: Number(value) }  
-        }));  
-      };  
-  
-      // --- 核心修复区：终极光栅化上传引擎 ---  
-      const handleIconAssetsUpload = async (e) => {  
-        const files = e.target.files;  
-        if (!files.length) return;  
-          
-        showToast("正在通过光栅化引擎处理素材...");  
-        const newMap = { ...iconMap };  
-          
-        const promises = Array.from(files).map(file => {  
-          return new Promise((resolve) => {  
-            const reader = new FileReader();  
-            reader.onload = (evt) => {  
-              const dataUrl = evt.target.result;  
-                
-              if (file.name.toLowerCase().endsWith('.svg') || file.type.includes('svg')) {  
-                const img = new Image();  
-                img.onload = () => {  
-                  const canvas = document.createElement('canvas');  
-                  const w = img.width || 300;  
-                  const h = img.height || 150;  
-                  canvas.width = w * 3; // 3倍超采样，确保视网膜级别清晰  
-                  canvas.height = h * 3;  
-                  const ctx = canvas.getContext('2d');  
-                  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);  
-                    
-                  newMap[file.name] = canvas.toDataURL('image/png', 1.0);  
-                  resolve();  
-                };  
-                img.onerror = () => {  
-                  newMap[file.name] = dataUrl;  
-                  resolve();  
-                };  
-                img.src = dataUrl;  
-              } else {  
-                newMap[file.name] = dataUrl;  
-                resolve();  
-              }  
-            };  
-            reader.readAsDataURL(file);  
-          });  
-        });  
-          
-        await Promise.all(promises);  
-        setIconMap(newMap);  
-        showToast(`成功处理并加载 ${files.length} 个安全图标`);  
-      };  
-  
-      const generatePng = async (wrap, width, height) => {
-        const originalCssText = wrap.style.cssText;
+      useEffect(() => {
+        localStorage.setItem('ai_api_key', apiKey);
+      }, [apiKey]);
+
+      const pollStatus = async (id) => {
         try {
-          wrap.style.cssText = `
-            width: ${width}px !important;
-            height: ${height}px !important;
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            z-index: 99999 !important;
-            transform: none !important;
-            background-color: ${canvasBg} !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            margin: 0 !important;
-            opacity: 1 !important;
-          `;
-          await new Promise(resolve => setTimeout(resolve, 400));
-          const canvas = await window.html2canvas(wrap, {
-            backgroundColor: canvasBg,
-            scale: 1,
-            width: width,
-            height: height,
-            useCORS: true,
-            allowTaint: true,
-            logging: false,
+          const res = await fetch(`https://api.wuyinkeji.com/api/async/detail?key=${encodeURIComponent(apiKey)}&id=${encodeURIComponent(id)}`);
+          const data = await res.json();
+
+          console.log("Detail API response:", data);
+          
+          if (data.code !== 200) {
+            if (data.code === 403) {
+              throw new Error("密钥错误或已失效");
+            }
+            throw new Error(data.msg || "获取任务状态失败");
+          }
+
+          const taskData = data.data;
+          if (!taskData) {
+            throw new Error("返回数据异常：找不到data");
+          }
+
+          // 尝试根据常见状态判断
+          // 假设：status = 'success', 'processing', 'failed' 等
+          // 由于没有完整的文档，我们尽量兼容各种情况
+          const statusVal = String(taskData.status || taskData.state || '').toLowerCase();
+
+          if (statusVal === 'success' || statusVal === 'succeeded' || statusVal === 'completed' || taskData.url || taskData.image || (taskData.images && taskData.images.length > 0)) {
+            setStatus('success');
+            // 提取图片
+            let finalUrl = taskData.url || taskData.image || '';
+            if (!finalUrl && taskData.images && taskData.images.length > 0) {
+              finalUrl = taskData.images[0];
+            }
+            if (!finalUrl && typeof taskData === 'string' && taskData.startsWith('http')) {
+              finalUrl = taskData;
+            }
+            
+            // 兜底方案：如果找不到，将整个对象转成字符串让用户看
+            if (!finalUrl) {
+              finalUrl = JSON.stringify(taskData);
+            }
+
+            setResultImage(finalUrl);
+            setProgressMsg('生成成功！');
+          } else if (statusVal === 'failed' || statusVal === 'error') {
+            setStatus('error');
+            setErrorMsg(`生成失败: ${taskData.reason || taskData.error || '未知错误'}`);
+          } else {
+            // 继续轮询
+            setProgressMsg(`生成中... (状态: ${statusVal || '处理中'})`);
+            setTimeout(() => pollStatus(id), 3000);
+          }
+
+        } catch (err) {
+          console.error("Polling error:", err);
+          setStatus('error');
+          setErrorMsg(err.message || "请求异常");
+        }
+      };
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!apiKey.trim()) {
+          setErrorMsg('请输入API密钥');
+          return;
+        }
+        if (!prompt.trim()) {
+          setErrorMsg('请输入提示词');
+          return;
+        }
+
+        setStatus('submitting');
+        setErrorMsg('');
+        setResultImage('');
+        setTaskId('');
+        setProgressMsg('提交任务中...');
+
+        const urls = urlsText.split('\n').map(u => u.trim()).filter(u => u);
+
+        const payload = {
+          prompt,
+          size,
+          aspectRatio
+        };
+        if (urls.length > 0) {
+          payload.urls = urls;
+        }
+
+        try {
+          const res = await fetch(`https://api.wuyinkeji.com/api/async/image_nanoBanana2?key=${encodeURIComponent(apiKey)}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
           });
-          const dataUrl = canvas.toDataURL('image/png', 1.0);
-          // 立即释放 canvas 内存
-          canvas.width = 1; canvas.height = 1;
-          return dataUrl;
-        } finally {
-          wrap.style.cssText = originalCssText;
+
+          const data = await res.json();
+          console.log("Submit API response:", data);
+
+          if (data.code !== 200) {
+            throw new Error(data.msg || "提交失败");
+          }
+
+          if (data.data && data.data.id) {
+            const id = data.data.id;
+            setTaskId(id);
+            setStatus('polling');
+            setProgressMsg('任务已提交，排队生成中...');
+            setTimeout(() => pollStatus(id), 3000);
+          } else {
+            throw new Error("返回数据缺失任务ID");
+          }
+
+        } catch (err) {
+          console.error("Submit error:", err);
+          setStatus('error');
+          setErrorMsg(err.message || "请求异常");
         }
       };
 
-      const batchProcess = async () => {
-        if (!window.html2canvas) {
-          showToast("截图服务加载中，请稍候...");
-          return;
-        }
-
-        const detectRegionLuminance = (blobUrl, yStart, yEnd) => new Promise(resolve => {
-          const img = new Image();
-          img.onload = () => {
-            const sw = 120, sh = 60;
-            const canvas = document.createElement('canvas');
-            canvas.width = sw; canvas.height = sh;
-            const ctx = canvas.getContext('2d');
-            const srcY = img.height * yStart;
-            const srcH = img.height * (yEnd - yStart);
-            ctx.drawImage(img, 0, srcY, img.width, srcH, 0, 0, sw, sh);
-            const d = ctx.getImageData(0, 0, sw, sh).data;
-            let t = 0;
-            for (let i = 0; i < d.length; i += 4)
-              t += 0.2126 * d[i] + 0.7152 * d[i+1] + 0.0722 * d[i+2];
-            canvas.width = 1; canvas.height = 1; 
-            resolve(t / (sw * sh));
-          };
-          img.onerror = () => resolve(128);
-          img.src = blobUrl;
-        });
-
-        try {
-          const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-          
-          let foldersToProcess = [];
-          for await (const entry of dirHandle.values()) {
-            if (entry.kind === 'directory' && entry.name !== '批量导出') {
-              foldersToProcess.push(entry);
-            }
-          }
-
-          if (foldersToProcess.length === 0) {
-            showToast("未找到需要处理的文件夹！");
-            return;
-          }
-
-          setIsBatchProcessing(true);
-          setBatchProgress({ current: 0, total: foldersToProcess.length, message: '开始批量处理...' });
-
-          const rootOutHandle = await dirHandle.getDirectoryHandle('批量导出', { create: true });
-
-          const writePngNow = async (dataUrl, folderH, filename) => {
-            const res = await fetch(dataUrl);
-            const blob = await res.blob();
-            const fh = await folderH.getFileHandle(filename, { create: true });
-            const writable = await fh.createWritable();
-            await writable.write(blob);
-            await writable.close();
-          };
-
-          const writeDoneMarker = async (folderH) => {
-            const fh = await folderH.getFileHandle('_done', { create: true });
-            const writable = await fh.createWritable();
-            await writable.write(new Blob([new Date().toISOString()]));
-            await writable.close();
-          };
-
-          const isDone = async (parentH, name) => {
-            try {
-              const f = await parentH.getDirectoryHandle(name);
-              await f.getFileHandle('_done');
-              return true;
-            } catch { return false; }
-          };
-
-          let skipped = 0;
-
-          for (let i = 0; i < foldersToProcess.length; i++) {
-            const folderHandle = foldersToProcess[i];
-            const outFolderName = `${folderHandle.name}B`;
-
-            if (await isDone(rootOutHandle, outFolderName)) {
-              skipped++;
-              setBatchProgress({
-                current: i + 1,
-                total: foldersToProcess.length,
-                message: `⏭ 已跳过 ${skipped} 个 · 处理中: ${i + 1}/${foldersToProcess.length}`
-              });
-              await new Promise(r => setTimeout(r, 20));
-              continue;
-            }
-
-            setBatchProgress({ current: i + 1, total: foldersToProcess.length, message: `正在处理: ${folderHandle.name}` });
+      return (
+        <div className="flex h-screen overflow-hidden bg-gray-100">
+          {/* 左侧控制面板 */}
+          <div className="w-80 bg-white shadow-xl flex flex-col z-10">
+            <div className="p-5 border-b border-gray-200">
+              <h1 className="text-xl font-bold text-gray-800 flex items-center">
+                <svg className="w-6 h-6 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                </svg>
+                AI作图 - 设计师专版
+              </h1>
+            </div>
             
-            try {
-              let lockEntry = null;
-              let homeEntry = null;
-              let allImages = [];
+            <div className="flex-1 overflow-y-auto p-5">
+              <form onSubmit={handleSubmit} className="space-y-4">
 
-              for await (const entry of folderHandle.values()) {
-                if (entry.kind === 'file' && entry.name.match(/\.(jpg|jpeg|png|webp|gif)$/i)) {
-                  allImages.push(entry);
-                  const baseName = entry.name.replace(/\.[^.]+$/, '');
-                  if (baseName.endsWith('1')) lockEntry = entry;
-                  else if (baseName.endsWith('2')) homeEntry = entry;
-                }
-              }
+                {/* 密钥 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">API 密钥 <span className="text-red-500">*</span></label>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    placeholder="请输入你的API密钥"
+                  />
+                </div>
 
-              if (!lockEntry && allImages.length > 0) lockEntry = allImages[0];
-              if (!homeEntry && allImages.length > 1) homeEntry = allImages[1];
-              else if (!homeEntry && lockEntry) homeEntry = lockEntry;
+                {/* 提示词 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">提示词 (Prompt) <span className="text-red-500">*</span></label>
+                  <textarea
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none"
+                    placeholder="描述你想要的画面，如：一只赛博朋克风格的可爱猫咪，高清晰度，细节丰富..."
+                  />
+                </div>
 
-              if (!lockEntry) continue;
+                {/* 输出尺寸 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">图像大小 (Size)</label>
+                  <select
+                    value={size}
+                    onChange={(e) => setSize(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  >
+                    <option value="1K">1K (默认)</option>
+                    <option value="2K">2K</option>
+                    <option value="4K">4K (生成时间较长)</option>
+                  </select>
+                </div>
 
-              const lockBlobUrl = URL.createObjectURL(await lockEntry.getFile());
-              const homeBlobUrl = (lockEntry === homeEntry)
-                ? lockBlobUrl
-                : URL.createObjectURL(await homeEntry.getFile());
+                {/* 比例 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">图像比例 (Aspect Ratio)</label>
+                  <select
+                    value={aspectRatio}
+                    onChange={(e) => setAspectRatio(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  >
+                    <option value="auto">auto (默认)</option>
+                    <option value="1:1">1:1 (头像/方图)</option>
+                    <option value="16:9">16:9 (横屏/桌面)</option>
+                    <option value="9:16">9:16 (竖屏/手机)</option>
+                    <option value="4:3">4:3</option>
+                    <option value="3:4">3:4</option>
+                    <option value="3:2">3:2</option>
+                    <option value="2:3">2:3</option>
+                    <option value="5:4">5:4</option>
+                    <option value="4:5">4:5</option>
+                    <option value="21:9">21:9 (带鱼屏)</option>
+                  </select>
+                </div>
 
-              const lockTopLum  = await detectRegionLuminance(lockBlobUrl, 0, 0.22);
-              const lockBotLum  = await detectRegionLuminance(lockBlobUrl, 0.78, 1.0);
-              const homeTopLum  = await detectRegionLuminance(homeBlobUrl, 0, 0.12);
-              const homeBotLum  = await detectRegionLuminance(homeBlobUrl, 0.78, 1.0);
-              setLockTopTheme(lockTopLum > 155 ? 'dark' : 'light');
-              setLockTheme(lockBotLum > 155 ? 'dark' : 'light');
-              setHomeTopTheme(homeTopLum > 155 ? 'dark' : 'light');
-              setHomeTheme(homeBotLum > 155 ? 'dark' : 'light');
+                {/* 参考图 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">参考图 (URLs) - 每行一个</label>
+                  <textarea
+                    value={urlsText}
+                    onChange={(e) => setUrlsText(e.target.value)}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none"
+                    placeholder="https://example.com/img1.jpg&#10;https://example.com/img2.jpg"
+                  />
+                </div>
 
-              const lockDims = await getImageDimensions(lockBlobUrl);
-              const homeDims = await getImageDimensions(homeBlobUrl);
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={status === 'submitting' || status === 'polling'}
+                    className={`w-full py-2.5 px-4 rounded-md text-white font-medium transition-colors ${
+                      (status === 'submitting' || status === 'polling')
+                        ? 'bg-blue-400 cursor-not-allowed'
+                        : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'
+                    }`}
+                  >
+                    {status === 'submitting' ? '提交请求中...' : status === 'polling' ? '生成中...' : '开始生成'}
+                  </button>
+                </div>
 
-              setWp({
-                lock: { url: lockBlobUrl, scale: calculateOptimalScale(lockDims.width, lockDims.height), x: 0, y: 0 },
-                home: { url: homeBlobUrl, scale: calculateOptimalScale(homeDims.width, homeDims.height), x: 0, y: 0 }
-              });
-
-              await new Promise(r => setTimeout(r, 600));
-
-              const outFolderHandle = await rootOutHandle.getDirectoryHandle(outFolderName, { create: true });
-
-              // 截图 → 立即写盘 (增加等待时间至 550ms，确保透明度动画执行完毕)
-              setCurrentView('lock');
-              await new Promise(r => setTimeout(r, 550));
-              await writePngNow(await generatePng(phoneWrapRef.current, 750, 1000), outFolderHandle, '锁屏.png');
-
-              setCurrentView('home');
-              await new Promise(r => setTimeout(r, 550));
-              await writePngNow(await generatePng(phoneWrapRef.current, 750, 1000), outFolderHandle, '墙纸.png');
-
-              await writePngNow(await generatePng(doubleWrapRef.current, 1000, 1000), outFolderHandle, '双排.png');
-
-              await writeDoneMarker(outFolderHandle);
-
-              URL.revokeObjectURL(lockBlobUrl);
-              if (homeBlobUrl !== lockBlobUrl) URL.revokeObjectURL(homeBlobUrl);
-
-              await new Promise(r => setTimeout(r, 600));
-
-            } catch (itemErr) {
-              console.error(`处理 ${folderHandle.name} 失败:`, itemErr);
-              setBatchProgress(prev => ({ ...prev, message: `⚠️ 跳过出错项: ${folderHandle.name}` }));
-              await new Promise(r => setTimeout(r, 400));
-            }
-          }
-          
-          setBatchProgress({ current: foldersToProcess.length, total: foldersToProcess.length, message: '批量处理完成！' });
-          showToast("所有文件夹处理完毕！");
-        } catch (error) {
-          console.error("Batch processing failed or cancelled:", error);
-          showToast("批量处理已取消或出错！");
-        } finally {
-          setIsBatchProcessing(false);
-        }
-      };
-
-      const saveShot = async (isDouble = false) => {  
-        if (!window.html2canvas) {
-          showToast("截图服务加载中，请稍候...");
-          return;
-        }  
-        if (isExporting) return;  
-  
-        setIsExporting(true);  
-        await new Promise(r => setTimeout(r, 50));  
-          
-        const wrap = isDouble ? doubleWrapRef.current : phoneWrapRef.current;  
-        const width = isDouble ? 1000 : 750;
-        const height = 1000;
-
-        setExportDimensions({ width, height });
-  
-        try {  
-          const dataUrl = await generatePng(wrap, width, height);
-            
-          setExportImage(dataUrl);  
-          showToast('生成成功！');  
-            
-          try {  
-            const link = document.createElement('a');  
-            link.download = `iOS26-Preview-${width}x${height}.png`;  
-            link.href = dataUrl;  
-            link.click();  
-          } catch (err) {  
-            console.log('自动下载被拦截');  
-          }  
-  
-        } catch (err) {  
-          console.error("截图或导出失败:", err);  
-          showToast('截图失败，请确保导入了所有图片！');  
-        } finally {  
-          setIsExporting(false);  
-        }  
-      };  
-  
-      const AppIcon = ({ app, size = 70, theme = 'light' }) => {  
-        const imgSrc = iconMap[app.img] || app.img;   
-        return (  
-          <div className="flex flex-col items-center gap-[5px] cursor-pointer active:scale-90 transition-transform" onClick={() => showToast(`打开 ${app.name}`)}>  
-            <div   
-              className="relative rounded-[17px] overflow-hidden flex-shrink-0"  
-              style={{ width: size, height: size, backgroundColor: 'transparent' }}   
-            >  
-              {imgSrc && <img src={imgSrc} alt={app.name} className="absolute inset-0 w-full h-full object-cover z-0 block" onError={(e) => { e.target.src = TRANSPARENT_PIXEL; }} />}  
-            </div>  
-          </div>  
-        );  
-      };  
-
-      // 修复重点：去除了外层和内部 flex 布局，全部使用绝对定位(absolute)，保证截图时坐标100%固定
-      const renderLockScreenContent = (isVisible) => (
-        <div   
-          className="absolute inset-0 z-10 transition-opacity duration-500"  
-          style={{ opacity: isVisible ? 1 : 0, pointerEvents: isVisible ? 'auto' : 'none' }}  
-        >  
-          <div   
-            className="absolute inset-0 z-0 bg-cover bg-center"  
-            style={{  
-              backgroundImage: `url(${wp.lock.url}), linear-gradient(160deg, #0a0a2e 0%, #1a0a3e 35%, #0a1a2e 70%, #000d1a 100%)`,  
-              backgroundSize: `${wp.lock.scale}%`,  
-              backgroundPosition: `${50 + wp.lock.x}% ${50 + wp.lock.y}%`,  
-            }}  
-          />  
-
-          <div className="absolute top-0 left-0 right-0 z-20 flex justify-end items-center px-[28px] pt-[16px] pb-[4px] pointer-events-none">  
-            <StatusBarIcons theme={lockTopTheme === 'dark' ? 'black' : 'white'} iconMap={iconMap} bat={bat} />  
-          </div>  
-            
-          {/* 将时间焊死在距顶部 90px 处 */}
-          <div className="absolute top-[90px] left-0 right-0 z-10 flex flex-col items-center pointer-events-none">  
-            <div className="text-[18px] font-medium tracking-[0.2px] mb-1" style={{ color: lockTopTheme === 'dark' ? '#000000' : '#ffffff', opacity: 0.88 }}>  
-              {formatDate(currentTime)}  
-            </div>  
-            <div   
-              className="text-[96px] tracking-[-4px] leading-none transition-all duration-200 block"   
-              style={{   
-                color: lockTopTheme === 'dark' ? '#000000' : '#ffffff',   
-                fontWeight: timeFontWeight,   
-                fontFeatureSettings: '"tnum"',   
-                transform: `scaleY(${timeStretch / 100})`,   
-                transformOrigin: 'top center',  
-                fontFamily: '"SF Pro Display", "SF Pro", -apple-system, BlinkMacSystemFont, sans-serif'   
-              }}  
-            >  
-              {formatTime(currentTime)}  
-            </div>  
-          </div>  
-
-          {/* 将底部按钮焊死在距底部 46px 处 */}
-          <div className="absolute bottom-[46px] left-0 right-0 px-[46px] flex justify-between items-center pointer-events-auto z-20">  
-            <div   
-              className={`w-[64px] h-[64px] rounded-full flex items-center justify-center cursor-pointer transition-all active:scale-90 border-[0.5px] backdrop-blur-[22px] ${  
-                lockTheme === 'dark'   
-                  ? (flashlightOn ? 'bg-[#ffffff]/90 border-white/50' : 'bg-black/30 border-white/20 hover:bg-black/40 shadow-lg shadow-black/20')  
-                  : (flashlightOn ? 'bg-white/90 border-white/50' : 'bg-white/20 border-white/20 hover:bg-white/30 shadow-sm')  
-              }`}  
-              style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }} 
-              onClick={() => { setFlashlightOn(!flashlightOn); showToast(!flashlightOn ? '手电筒：开' : '手电筒：关'); }}  
-            >  
-              <img   
-                src={iconMap['Symbol.svg'] || 'Symbol.svg'}   
-                alt="Flashlight"   
-                className="w-[52px] h-[52px] object-contain scale-[1.35] transition-all"   
-                style={getIconStyle(lockTheme === 'dark', flashlightOn)}   
-                onError={(e) => { e.target.src = TRANSPARENT_PIXEL; }}  
-              />  
-            </div>  
-            <div   
-              className={`w-[64px] h-[64px] rounded-full flex items-center justify-center cursor-pointer transition-all active:scale-90 border-[0.5px] backdrop-blur-[22px] ${  
-                lockTheme === 'dark' ? 'bg-black/30 border-white/20 hover:bg-black/40 shadow-lg shadow-black/20' : 'bg-white/20 border-white/20 hover:bg-white/30 shadow-sm'  
-              }`}  
-              style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }} 
-              onClick={() => showToast('📸 相机')}  
-            >  
-              <img   
-                src={iconMap['Symbol (1).svg'] || 'Symbol (1).svg'}   
-                alt="Camera"   
-                className="w-[50px] h-[50px] object-contain scale-[1.25] transition-all"   
-                style={getIconStyle(lockTheme === 'dark', false)}   
-                onError={(e) => { e.target.src = TRANSPARENT_PIXEL; }}  
-              />  
-            </div>  
-          </div>  
-        </div>  
-      );
-
-      // 同理，修复桌面的布局问题，避免后续增加桌面组件时发生同样的位移问题
-      const renderHomeScreenContent = (isVisible) => (
-        <div   
-          className="absolute inset-0 z-10 transition-opacity duration-500"  
-          style={{ opacity: isVisible ? 1 : 0, pointerEvents: isVisible ? 'auto' : 'none' }}  
-        >  
-          <div   
-            className="absolute inset-0 z-0 bg-cover bg-center"  
-            style={{  
-              backgroundImage: `url(${wp.home.url}), linear-gradient(148deg, #160530 0%, #071422 40%, #001c14 100%)`,  
-              backgroundSize: `${wp.home.scale}%`,  
-              backgroundPosition: `${50 + wp.home.x}% ${50 + wp.home.y}%`,  
-            }}  
-          />  
-            
-          <div className="absolute top-0 left-0 right-0 z-20 flex justify-between items-center px-[28px] pt-[16px] pb-[4px]">  
-            <div className={`text-[15.5px] font-semibold tracking-[-0.12px] ${homeTopTheme === 'dark' ? 'text-black' : 'text-white'}`} style={{ fontFeatureSettings: '"tnum"' }}>  
-              {formatTime(currentTime)}  
-            </div>  
-            <StatusBarIcons theme={homeTopTheme === 'dark' ? 'black' : 'white'} iconMap={iconMap} bat={bat} />  
-          </div>  
-
-          <div className="absolute top-[50px] left-0 right-0 z-10 px-[18px] pt-[20px] grid grid-cols-4 gap-y-[32px]">  
-            {HOME_APPS.map(app => <AppIcon key={app.id} app={app} size={70} theme={homeTheme} />)}  
-          </div>  
-
-          {/* 将底部的翻页点与 Dock 栏彻底固定在底部 */}
-          <div className="absolute bottom-0 left-0 right-0 w-full flex flex-col z-20">  
-            <div className="flex justify-center gap-[5px] my-[6px] relative z-10">  
-              <div className={`w-[18px] h-[6px] rounded-[3px] transition-colors ${homeTheme === 'dark' ? 'bg-black/60' : 'bg-white/85'}`}></div>  
-              <div className={`w-[6px] h-[6px] rounded-full transition-colors ${homeTheme === 'dark' ? 'bg-black/30' : 'bg-white/30'}`}></div>  
-              <div className={`w-[6px] h-[6px] rounded-full transition-colors ${homeTheme === 'dark' ? 'bg-black/30' : 'bg-white/30'}`}></div>  
-            </div>  
-
-            <div className={`relative z-20 mx-[18px] mb-[8px] backdrop-blur-[46px] rounded-[34px] border-[0.5px] px-[12px] py-[13px] flex justify-around items-center transition-all ${  
-              homeTheme === 'dark' ? 'bg-black/30 border-white/20 shadow-lg shadow-black/20' : 'bg-white/10 border-white/20 shadow-sm'  
-            }`} style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}>  
-              {DOCK_APPS.map(app => <AppIcon key={app.id} app={app} size={62} theme={homeTheme} />)}  
-            </div>  
-
-            <div className={`w-[130px] h-[5px] rounded-[3px] mx-auto mt-[6px] mb-[9px] relative z-20 transition-colors ${homeTheme === 'dark' ? 'bg-black/45' : 'bg-white/45'}`}></div>  
+              </form>
+            </div>
           </div>
-        </div>  
-      );
-  
-      return (  
-        <div className="min-h-screen bg-white flex items-start justify-center gap-7 p-7 font-sans relative" style={{ fontFamily: '"SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>  
-            
-          {isExporting && !exportImage && (  
-            <div className="fixed inset-0 z-[2000] bg-white/80 backdrop-blur-sm flex items-center justify-center animate-fade-in">  
-              <div className="flex flex-col items-center gap-5 bg-white p-8 rounded-3xl shadow-2xl border border-gray-100">  
-                <div className="w-12 h-12 border-4 border-[#007aff] border-t-transparent rounded-full animate-spin"></div>  
-                <div className="text-center">  
-                  <p className="text-gray-800 font-bold text-base mb-1">正在生成超清截图</p>  
-                  <p className="text-gray-500 text-xs">正在进行 750x1000 无损级采样，请勿关闭页面...</p>  
-                </div>  
-              </div>  
-            </div>  
-          )}  
-  
-          {exportImage && (  
-            <div className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">  
-              <div className="bg-white rounded-3xl p-6 w-full max-w-sm flex flex-col items-center shadow-2xl relative">  
-                <button onClick={() => setExportImage(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-800 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center transition-colors">✕</button>  
-                <h3 className="text-lg font-bold text-gray-800 mb-2">导出成功</h3>  
-                <p className="text-xs text-gray-500 mb-5 text-center leading-relaxed">  
-                  如果未触发自动下载<br/>请<strong className="text-[#007aff]">长按图片</strong>或<strong className="text-[#007aff]">右键选择图片另存为</strong>。<br/>  
-                  <span className="inline-block mt-1 px-2 py-0.5 bg-gray-100 rounded text-gray-600">尺寸: {exportDimensions.width} × {exportDimensions.height} 像素</span>  
-                </p>  
-                <div className="bg-gray-50 rounded-2xl p-3 w-full max-h-[50vh] overflow-y-auto flex justify-center border border-gray-100">  
-                  <img src={exportImage} alt="Exported Preview" className="w-full h-auto rounded-xl shadow-sm" style={{ maxWidth: '240px' }} />  
-                </div>  
-                <button   
-                  onClick={() => setExportImage(null)}  
-                  className="mt-6 w-full py-3.5 bg-[#007aff] text-white rounded-xl font-semibold hover:bg-[#0066d6] active:scale-95 transition-all shadow-md shadow-blue-500/20"  
-                >  
-                  完成  
-                </button>  
-              </div>  
-            </div>  
-          )}  
-  
-          <div className="bg-[#f5f5f7] border border-[#d1d1d6] rounded-[18px] p-5 w-[280px] text-[#1c1c1e] sticky top-7 max-h-[calc(100vh-56px)] overflow-y-auto flex-shrink-0 shadow-sm" style={{ scrollbarWidth: 'thin' }}>  
-            <div className="text-[15px] font-bold tracking-[-0.3px] mb-[2px]">iOS 26 模拟器</div>  
-            <div className="text-[11px] text-[#8e8e93] mb-4">iPhone 15 · 控制面板</div>  
-              
-            <div className="flex bg-[#e5e5ea] rounded-[10px] p-[3px] mb-4">  
-              <button onClick={() => { setActiveTab('lock'); setCurrentView('lock'); }} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${activeTab === 'lock' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>🔒 锁屏</button>  
-              <button onClick={() => { setActiveTab('home'); setCurrentView('home'); }} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${activeTab === 'home' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>📱 桌面</button>  
-              <button onClick={() => setActiveTab('statusbar')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${activeTab === 'statusbar' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>🔋 状态栏</button>  
-              <button onClick={() => setActiveTab('export')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${activeTab === 'export' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>💾 导出</button>  
-            </div>  
-  
-            <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden mb-4">  
-              <label className="flex items-center gap-2 p-3 text-[12px] text-[#007aff] cursor-pointer hover:bg-gray-50">  
-                <input type="file" multiple accept="image/*" onChange={handleIconAssetsUpload} className="hidden" />  
-                <UploadIcon /> 导入本地高清素材图标  
-              </label>  
-            </div>  
-  
-            {activeTab === 'lock' && (  
-              <div className="animate-fade-in">  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] my-[10px]">锁屏壁纸</div>  
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden mb-2">  
-                  <div className="flex items-center justify-between p-3">  
-                    <div className="text-[13px] text-[#1c1c1e]">上传壁纸<span className="block text-[10px] text-[#8e8e93] mt-[1px]">支持 JPG / PNG</span></div>  
-                    <label className="bg-[#007aff] text-white text-[11px] px-3 py-1.5 rounded-[8px] cursor-pointer font-semibold hover:bg-[#0066d6] active:scale-95 transition-all">  
-                      <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'lock')} className="hidden" />  
-                      更换  
-                    </label>  
-                  </div>  
-                </div>  
-                  
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden p-3 flex flex-col gap-3">  
-                  <SliderControl label="缩放大小 (%)" value={wp.lock.scale} min={50} max={200} step={1} onChange={v => handleWpChange('lock', 'scale', v)} />  
-                  <SliderControl label="水平位置 (X)" value={wp.lock.x} min={-50} max={50} step={1} onChange={v => handleWpChange('lock', 'x', v)} />  
-                  <SliderControl label="垂直位置 (Y)" value={wp.lock.y} min={-50} max={50} step={1} onChange={v => handleWpChange('lock', 'y', v)} />  
-                </div>  
-  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mt-[14px] mb-[7px]">毛玻璃与组件主题</div>  
-                <div className="flex bg-[#e5e5ea] rounded-[10px] p-[3px] mb-4">  
-                  <button onClick={() => setLockTheme('light')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${lockTheme === 'light' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>浅色UI</button>  
-                  <button onClick={() => setLockTheme('dark')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${lockTheme === 'dark' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>深色UI</button>  
-                </div>  
-  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mt-[14px] mb-[7px]">顶部时间与状态栏</div>  
-                <div className="flex bg-[#e5e5ea] rounded-[10px] p-[3px] mb-4">  
-                  <button onClick={() => setLockTopTheme('light')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${lockTopTheme === 'light' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>浅色内容</button>  
-                  <button onClick={() => setLockTopTheme('dark')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${lockTopTheme === 'dark' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>深色内容</button>  
-                </div>  
-  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mt-[14px] mb-[7px]">时间样式</div>  
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden p-3 flex flex-col gap-3">  
-                  <SliderControl label="字体粗细" value={timeFontWeight} min={100} max={900} step={100} onChange={v => setTimeFontWeight(v)} />  
-                  <SliderControl label="纵向拉伸 (%)" value={timeStretch} min={50} max={200} step={1} onChange={v => setTimeStretch(v)} />  
-                </div>  
-              </div>  
-            )}  
-  
-            {activeTab === 'home' && (  
-              <div className="animate-fade-in">  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] my-[10px]">桌面壁纸</div>  
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden mb-2">  
-                  <div className="flex items-center justify-between p-3">  
-                    <div className="text-[13px] text-[#1c1c1e]">上传壁纸<span className="block text-[10px] text-[#8e8e93] mt-[1px]">支持 JPG / PNG</span></div>  
-                    <label className="bg-[#007aff] text-white text-[11px] px-3 py-1.5 rounded-[8px] cursor-pointer font-semibold hover:bg-[#0066d6] active:scale-95 transition-all">  
-                      <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'home')} className="hidden" />  
-                      更换  
-                    </label>  
-                  </div>  
-                </div>  
-  
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden p-3 flex flex-col gap-3">  
-                  <SliderControl label="缩放大小 (%)" value={wp.home.scale} min={50} max={200} step={1} onChange={v => handleWpChange('home', 'scale', v)} />  
-                  <SliderControl label="水平位置 (X)" value={wp.home.x} min={-50} max={50} step={1} onChange={v => handleWpChange('home', 'x', v)} />  
-                  <SliderControl label="垂直位置 (Y)" value={wp.home.y} min={-50} max={50} step={1} onChange={v => handleWpChange('home', 'y', v)} />  
-                </div>  
-  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mt-[14px] mb-[7px]">Dock栏与文字主题</div>  
-                <div className="flex bg-[#e5e5ea] rounded-[10px] p-[3px] mb-4">  
-                  <button onClick={() => setHomeTheme('light')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${homeTheme === 'light' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>浅色UI</button>  
-                  <button onClick={() => setHomeTheme('dark')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${homeTheme === 'dark' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>深色UI</button>  
-                </div>  
-  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mt-[14px] mb-[7px]">顶部时间与状态栏</div>  
-                <div className="flex bg-[#e5e5ea] rounded-[10px] p-[3px] mb-4">  
-                  <button onClick={() => setHomeTopTheme('light')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${homeTopTheme === 'light' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>浅色内容</button>  
-                  <button onClick={() => setHomeTopTheme('dark')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${homeTopTheme === 'dark' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>深色内容</button>  
-                </div>  
-              </div>  
-            )}  
-  
-            {activeTab === 'statusbar' && (  
-              <div className="animate-fade-in">  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mb-[7px]">状态栏图标比例微调</div>  
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden p-3 flex flex-col gap-3">  
-                  <SliderControl label="信号高度" value={bat.signal} min={8} max={30} step={0.5} onChange={v => setBat({...bat, signal: v})} />  
-                  <SliderControl label="WiFi高度" value={bat.wifi} min={8} max={30} step={0.5} onChange={v => setBat({...bat, wifi: v})} />  
-                  <SliderControl label="电池高度" value={bat.height} min={8} max={30} step={0.5} onChange={v => setBat({...bat, height: v})} />  
-                </div>  
-              </div>  
-            )}  
-  
-            {activeTab === 'export' && (  
-              <div className="animate-fade-in">  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mb-[7px]">画布背景色</div> 
-                <div className="grid grid-cols-5 gap-2 mb-4"> 
-                  {[ 
-                    { name: '纯白', value: '#ffffff' }, 
-                    { name: '95%灰', value: '#f2f2f7' }, 
-                    { name: '90%灰', value: '#e5e5ea' }, 
-                    { name: '冷灰', value: '#f0f4f8' }, 
-                    { name: '暖灰', value: '#fcfaf8' }, 
-                  ].map(c => ( 
-                    <button 
-                      key={c.value} 
-                      onClick={() => setCanvasBg(c.value)} 
-                      className={`h-[32px] rounded-full border transition-all text-[10px] flex items-center justify-center font-medium ${canvasBg === c.value ? 'border-[#007aff] text-[#007aff] ring-2 ring-[#007aff]/20' : 'border-[#d1d1d6] text-[#8e8e93] hover:border-[#8e8e93]'}`} 
-                      style={{ backgroundColor: c.value }} 
-                      title={c.name} 
-                    > 
-                      {canvasBg === c.value ? c.name : ''} 
-                    </button> 
-                  ))} 
-                </div> 
- 
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] my-[10px]">截图导出</div>  
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden mb-4 p-3">  
-                  <div className="text-[13px] text-[#1c1c1e]">生成 750×1000 图像<span className="block text-[10px] text-[#8e8e93] mt-[1px]">精准比例，彻底消除白边</span></div>  
-                </div>  
-                  
-                <button   
-                  onClick={() => saveShot(false)}   
-                  disabled={isExporting || isBatchProcessing}   
-                  className={`w-full mb-3 py-3.5 rounded-[12px] text-[14px] font-semibold transition-all text-white ${isExporting || isBatchProcessing ? 'bg-[#c7c7cc] cursor-not-allowed' : 'bg-[#1c1c1e] hover:bg-[#3a3a3c] active:scale-95'}`}  
-                >  
-                  {isExporting ? '📸 正在生成...' : '📸 立即生成并保存单图'}  
-                </button>  
 
-                <button   
-                  onClick={() => saveShot(true)}   
-                  disabled={isExporting || isBatchProcessing}   
-                  className={`w-full py-3.5 rounded-[12px] text-[14px] font-semibold transition-all text-white ${isExporting || isBatchProcessing ? 'bg-[#c7c7cc] cursor-not-allowed' : 'bg-[#1c1c1e] hover:bg-[#3a3a3c] active:scale-95'}`}  
-                >  
-                  {isExporting ? '📸 正在生成...' : '📸 立即生成双图排版 (1000x1000)'}  
-                </button>  
-
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mt-[20px] mb-[7px]">批量自动化处理</div>
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden mb-4 p-3">  
-                  <div className="text-[13px] text-[#1c1c1e]">选择文件夹进行全自动处理<span className="block text-[10px] text-[#8e8e93] mt-[1px]">文件名末尾为 1 → 锁屏，末尾为 2 → 桌面；自动检测背景亮度；崩溃后重跑自动跳过已完成项</span></div>  
-                </div> 
-
-                {isBatchProcessing && (
-                  <div className="mb-3">
-                    <div className="text-[11px] text-[#8e8e93] flex justify-between mb-1">
-                      <span>{batchProgress.message}</span>
-                      <span>{batchProgress.current} / {batchProgress.total}</span>
-                    </div>
-                    <div className="w-full bg-[#e5e5ea] h-2 rounded-full overflow-hidden">
-                      <div 
-                        className="bg-[#007aff] h-full transition-all duration-300" 
-                        style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                )}
-
-                <button   
-                  onClick={batchProcess}   
-                  disabled={isExporting || isBatchProcessing}   
-                  className={`w-full py-3.5 rounded-[12px] text-[14px] font-semibold transition-all text-white ${isExporting || isBatchProcessing ? 'bg-[#c7c7cc] cursor-not-allowed' : 'bg-[#007aff] hover:bg-[#0066d6] active:scale-95'}`}  
-                >  
-                  {isBatchProcessing ? '🔄 批量处理中...' : '🚀 开始批量自动化生成'}  
-                </button>
-                  
-                <div className="mt-4 text-[11px] text-[#8e8e93] leading-relaxed">  
-                  * 本地脱机版可以直接抓取高分辨率画面。<br/>* 您已摆脱浏览器沙盒的安全限制。<br/>* 双击 HTML 即可无缝运行。  
-                </div>  
-              </div>  
-            )}  
-  
-          </div>  
-  
-          <div className="relative flex-shrink-0" style={{ width: '488px', height: '650px' }}>  
-            <div   
-              id="phone-wrap-capture"  
-              ref={phoneWrapRef}   
-              className="flex items-center justify-center absolute top-0 left-0 transition-colors duration-300"  
-              style={{   
-                width: '750px',   
-                height: '1000px',   
-                transform: 'scale(0.65)',   
-                transformOrigin: 'top left', 
-                backgroundColor: canvasBg 
-              }}  
-            >  
-              <div   
-                ref={screenRef}   
-                className="relative flex-shrink-0"  
-                style={{  
-                  width: '393px', height: '852px', borderRadius: '54px',  
-                  boxShadow: `0 0 0 1.5px ${canvasBg}`, 
-                  backgroundColor: canvasBg 
-                }}  
-              >  
-  
-                <div className="absolute inset-0 rounded-[54px] overflow-hidden">  
-                    
-                  <div className="absolute top-[12px] left-1/2 -translate-x-1/2 w-[118px] h-[34px] bg-black rounded-[20px] z-[150] transition-all cursor-pointer hover:w-[248px] hover:h-[62px] hover:rounded-[31px]">  
-                    <div className="absolute right-[18px] top-1/2 -translate-y-1/2 w-[10px] h-[10px] rounded-full" style={{ background: 'radial-gradient(circle at 38% 32%, #121228, #000)', boxShadow: 'inset 0 0 0 2px #1a1a2a, 0 0 4px rgba(30,30,120,0.5)' }}></div>  
-                  </div>  
-  
-                  {/* Lock Screen */}  
-                  {renderLockScreenContent(currentView === 'lock')}
-  
-                  {/* Home Screen */}  
-                  {renderHomeScreenContent(currentView === 'home')}
-  
-                </div>  
-              </div>  
-            </div>  
-
-            {/* Hidden container for double export */}
-            <div   
-              id="double-wrap-capture"  
-              ref={doubleWrapRef}   
-              className="flex items-center justify-center absolute top-0 left-0 transition-colors duration-300 pointer-events-none"  
-              style={{   
-                width: '1000px',   
-                height: '1000px',   
-                transform: 'scale(0.001)',   
-                transformOrigin: 'top left', 
-                backgroundColor: canvasBg,
-                opacity: 0,
-                zIndex: -9999
-              }}  
-            >  
-              <div className="flex gap-8 items-center justify-center">
-                <div   
-                  className="relative flex-shrink-0"  
-                  style={{  
-                    width: '393px', height: '852px', borderRadius: '54px',  
-                    boxShadow: `0 0 0 1.5px ${canvasBg}, 0 20px 60px -10px rgba(0,0,0,0.15)`, 
-                    backgroundColor: canvasBg 
-                  }}  
-                >  
-                  <div className="absolute inset-0 rounded-[54px] overflow-hidden">  
-                    <div className="absolute top-[12px] left-1/2 -translate-x-1/2 w-[118px] h-[34px] bg-black rounded-[20px] z-[150]">  
-                      <div className="absolute right-[18px] top-1/2 -translate-y-1/2 w-[10px] h-[10px] rounded-full" style={{ background: 'radial-gradient(circle at 38% 32%, #121228, #000)', boxShadow: 'inset 0 0 0 2px #1a1a2a, 0 0 4px rgba(30,30,120,0.5)' }}></div>  
-                    </div>  
-                    {renderLockScreenContent(true)}
-                  </div>  
-                </div>  
-
-                <div   
-                  className="relative flex-shrink-0"  
-                  style={{  
-                    width: '393px', height: '852px', borderRadius: '54px',  
-                    boxShadow: `0 0 0 1.5px ${canvasBg}, 0 20px 60px -10px rgba(0,0,0,0.15)`, 
-                    backgroundColor: canvasBg 
-                  }}  
-                >  
-                  <div className="absolute inset-0 rounded-[54px] overflow-hidden">  
-                    <div className="absolute top-[12px] left-1/2 -translate-x-1/2 w-[118px] h-[34px] bg-black rounded-[20px] z-[150]">  
-                      <div className="absolute right-[18px] top-1/2 -translate-y-1/2 w-[10px] h-[10px] rounded-full" style={{ background: 'radial-gradient(circle at 38% 32%, #121228, #000)', boxShadow: 'inset 0 0 0 2px #1a1a2a, 0 0 4px rgba(30,30,120,0.5)' }}></div>  
-                    </div>  
-                    {renderHomeScreenContent(true)}
-                  </div>  
-                </div>  
+          {/* 右侧展示区域 */}
+          <div className="flex-1 flex flex-col relative">
+            <div className="p-4 bg-white border-b border-gray-200 flex justify-between items-center shadow-sm z-10">
+              <h2 className="text-lg font-medium text-gray-700">实时预览</h2>
+              <div className="text-sm text-gray-500">
+                {taskId && <span>Task ID: <span className="font-mono text-xs">{taskId}</span></span>}
               </div>
-            </div>  
-          </div>  
-  
-          <div   
-            className="fixed bottom-[28px] left-1/2 -translate-x-1/2 bg-[#1c1c1e] text-white px-4 py-[9px] rounded-[11px] text-[13px] z-[9999] pointer-events-none whitespace-nowrap border-[0.5px] border-[#3a3a3c] transition-all duration-200"  
-            style={{  
-              opacity: toastMsg ? 1 : 0,  
-              transform: `translateX(-50%) translateY(${toastMsg ? '0' : '10px'})`  
-            }}  
-          >  
-            {toastMsg}  
-          </div>  
-        </div>  
-      );  
-    }  
-  
-    const root = ReactDOM.createRoot(document.getElementById('root'));  
-    root.render(<App />);  
-  </script>  
-</body>  
+            </div>
+
+            <div className="flex-1 overflow-auto p-8 flex items-center justify-center bg-gray-50 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+CjxyZWN0IHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgZmlsbD0iI2ZmZiIvPgo8Y2lyY2xlIGN4PSIyIiBjeT0iMiIgcj0iMSIgZmlsbD0iI2U1ZTdlYiIvPgo8L3N2Zz4=')]">
+              
+              {status === 'idle' && (
+                <div className="text-center text-gray-400 flex flex-col items-center">
+                  <svg className="w-16 h-16 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                  </svg>
+                  <p>填写参数并点击生成开始作图</p>
+                </div>
+              )}
+
+              {(status === 'submitting' || status === 'polling') && (
+                <div className="text-center flex flex-col items-center">
+                  <div className="spinner mb-4"></div>
+                  <h3 className="text-lg font-medium text-gray-800">{progressMsg}</h3>
+                  <p className="text-sm text-gray-500 mt-2">AI正在挥洒创意，请耐心等待...</p>
+                </div>
+              )}
+
+              {status === 'error' && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-lg max-w-lg shadow-sm">
+                  <h3 className="text-lg font-bold mb-2 flex items-center">
+                    <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"></path>
+                    </svg>
+                    请求失败
+                  </h3>
+                  <p className="text-sm break-all">{errorMsg}</p>
+                </div>
+              )}
+
+              {status === 'success' && resultImage && (
+                <div className="flex flex-col items-center w-full max-w-4xl animate-fade-in">
+                  <div className="bg-white p-2 shadow-lg rounded-xl mb-6 w-full max-w-full">
+                    {resultImage.startsWith('http') || resultImage.startsWith('data:') ? (
+                      <img
+                        src={resultImage}
+                        alt="Generated Result"
+                        className="w-full h-auto object-contain max-h-[70vh] rounded-lg"
+                      />
+                    ) : (
+                      <div className="p-4 bg-gray-100 rounded-lg whitespace-pre-wrap overflow-auto max-h-[70vh] text-xs font-mono">
+                        {resultImage}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* 下载或操作栏 */}
+                  <div className="flex gap-4">
+                    {resultImage.startsWith('http') || resultImage.startsWith('data:') ? (
+                      <a
+                        href={resultImage}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-6 py-2.5 bg-blue-600 text-white font-medium rounded-full shadow-md hover:bg-blue-700 transition-colors flex items-center"
+                      >
+                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                        </svg>
+                        在新标签页打开 / 保存原图
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
 </html>
