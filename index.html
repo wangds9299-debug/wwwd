@@ -1,966 +1,471 @@
-<!DOCTYPE html>  
-<html lang="zh-CN">  
-<head>  
-  <meta charset="UTF-8">  
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">  
-  <title>iOS 26 壁纸预览工具</title>  
-    
-  <script src="https://cdn.tailwindcss.com"></script>  
-    
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>  
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>  
-    
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>  
-  
-  <style>  
-    @import url('https://fonts.cdnfonts.com/css/sf-pro-display');  
-    body {  
-      margin: 0;  
-      padding: 0;  
-      background-color: #ffffff;  
-    }  
-    @keyframes fadeIn {  
-      from { opacity: 0; }  
-      to { opacity: 1; }  
-    }  
-    .animate-fade-in {  
-      animation: fadeIn 0.3s ease-in-out;  
-    }  
-  </style>  
-</head>  
-<body>  
-  <div id="root"></div>  
-  
-  <script type="text/babel">  
-    const { useState, useEffect, useRef } = React;  
-  
-    const UploadIcon = () => (  
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">  
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>  
-        <polyline points="17 8 12 3 7 8"></polyline>  
-        <line x1="12" y1="3" x2="12" y2="15"></line>  
-      </svg>  
-    );  
-  
-    // --- 安全的默认 Base64 资源，已在底层 SVG 代码中注入了绝对宽高防爆 ---  
-    const TRANSPARENT_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";  
-    const DEFAULT_SIGNAL = "data:image/svg+xml;charset=utf-8,%3Csvg width='17' height='11' viewBox='0 0 17 11' fill='white' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='0' y='7' width='3' height='4' rx='1'/%3E%3Crect x='4.5' y='4.5' width='3' height='6.5' rx='1'/%3E%3Crect x='9' y='2' width='3' height='9' rx='1'/%3E%3Crect x='13.5' y='0' width='3' height='11' rx='1'/%3E%3C/svg%3E";  
-    const DEFAULT_WIFI = "data:image/svg+xml;charset=utf-8,%3Csvg width='16' height='12' viewBox='0 0 16 12' fill='white' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M8 12C8.5 12 9 11.5 9 11C9 10.4 8.5 10 8 10C7.4 10 7 10.4 7 11C7 11.5 7.4 12 8 12Z'/%3E%3Cpath d='M4 8.5C6.2 6.6 9.8 6.6 12 8.5' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3Cpath d='M1.5 5.5C5 2.5 10.9 2.5 14.5 5.5' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E";  
-    const DEFAULT_BATTERY = "data:image/svg+xml;charset=utf-8,%3Csvg width='28' height='14' viewBox='-1 -0.5 28 14' fill='white' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='none' stroke='white' stroke-opacity='0.4' stroke-width='1' d='M5.4 0L19.5 0C21.3 0 22 0.2 22.8 0.5C23.5 0.9 24 1.4 24.4 2.1C24.8 2.9 25 3.6 25 5.4L25 7.5C25 9.3 24.8 10 24.4 10.8C24 11.5 23.5 12 22.8 12.4C22 12.8 21.3 13 19.5 13L5.4 13C3.6 13 2.9 12.8 2.2 12.4C1.5 12 0.9 11.5 0.5 10.8C0.2 10 0 9.3 0 7.5L0 5.4C0 3.6 0.2 2.9 0.5 2.1C0.9 1.4 1.5 0.9 2.2 0.5C2.9 0.2 3.6 0 5.4 0Z'/%3E%3Crect x='1.8' y='1.8' width='19' height='9.4' rx='2.5'/%3E%3Cpath d='M25.5 4.5v4a2 2 0 000-4z' fill-opacity='0.4'/%3E%3C/svg%3E";  
-  
-    const getImageDimensions = (url) => {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve({ width: img.width, height: img.height });
-        img.onerror = reject;
-        img.src = url;
-      });
-    };
-
-    const calculateOptimalScale = (imgWidth, imgHeight) => {
-      const containerWidth = 393;
-      const containerHeight = 852;
-      const imgRatio = imgWidth / imgHeight;
-      const containerRatio = containerWidth / containerHeight;
-      
-      let scale = 100;
-      if (imgRatio > containerRatio) {
-        scale = (containerHeight * imgRatio / containerWidth) * 100;
-      } else {
-        scale = 100;
-      }
-      return Math.max(100, Math.ceil(scale));
-    };
-
-    // --- 本地原图映射 ---  
-    const HOME_APPS = [  
-      { id: 'facetime', name: 'FaceTime', img: 'facetime-iOS-Default.png' },  
-      { id: 'calendar', name: 'Calendar', img: 'calendar-iOS-Default.png' },  
-      { id: 'photos', name: 'Photos', img: 'photos-iOS-Default.png' },  
-      { id: 'camera', name: 'Camera', img: 'camera-iOS-Default.png' },  
-      { id: 'mail', name: 'Mail', img: 'mail-iOS-Default.png' },  
-      { id: 'notes', name: 'Notes', img: 'notes-iOS-Default.png' },  
-      { id: 'reminders', name: 'Reminders', img: 'reminders-iOS-Default.png' },  
-      { id: 'clock', name: 'Clock', img: 'clock-iOS-Default.png' },  
-    ];  
-  
-    const DOCK_APPS = [  
-      { id: 'facetime', name: 'FaceTime', img: 'facetime-iOS-Default.png' },  
-      { id: 'mail', name: 'Mail', img: 'mail-iOS-Default.png' },  
-      { id: 'photos', name: 'Photos', img: 'photos-iOS-Default.png' },  
-      { id: 'clock', name: 'Clock', img: 'clock-iOS-Default.png' },  
-    ];  
-  
-    const DEFAULT_LOCK_WP = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop";  
-    const DEFAULT_HOME_WP = "https://images.unsplash.com/photo-1557672172-298e090bd0f1?q=80&w=2487&auto=format&fit=crop";  
-  
-    const getIconStyle = (isDark, isActive) => {  
-      if (!isDark && !isActive) return { mixBlendMode: 'screen', filter: 'none' };  
-      if (!isDark && isActive) return { mixBlendMode: 'multiply', filter: 'invert(1)' };  
-      if (isDark && !isActive) return { mixBlendMode: 'multiply', filter: 'invert(1)' };  
-      if (isDark && isActive) return { mixBlendMode: 'screen', filter: 'none' };  
-    };  
-  
-    const SliderControl = ({ label, value, min, max, step, onChange }) => (  
-      <div className="flex flex-col gap-1">  
-        <div className="flex justify-between text-[11px] text-[#8e8e93]"><span>{label}</span><span>{value}</span></div>  
-        <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))} className="accent-[#007aff] h-[3px] cursor-pointer" />  
-      </div>  
-    );  
-  
-    // --- 状态栏渲染器：回归标准，抛弃所有可能消失的嵌套，纯 img 标签渲染 ---  
-    const StatusBarIcons = ({ theme, iconMap, bat }) => {  
-      const sigW = Math.round(bat.signal * 1.54 * 10) / 10;  
-      const wifiW = Math.round(bat.wifi * 1.33 * 10) / 10;  
-      const batW = Math.round(bat.height * 2.1 * 10) / 10;  
-        
-      const sigSrc = iconMap['Cellular Connection.svg'] || 'Cellular Connection.svg';  
-      const wifiSrc = iconMap['Wifi.svg'] || 'Wifi.svg';  
-      const batSrc = iconMap['资源 1.svg'] || '资源 1.svg';  
-  
-      return (  
-        <div className="flex items-center gap-[6.5px] transition-all" style={{ filter: theme === 'black' ? 'invert(1)' : 'none' }}>  
-          <img src={sigSrc} alt="Signal" style={{ width: `${sigW}px`, height: `${bat.signal}px`, objectFit: 'contain', flexShrink: 0, display: 'block' }} onError={(e) => { e.target.src = DEFAULT_SIGNAL; }} />  
-          <img src={wifiSrc} alt="WiFi" style={{ width: `${wifiW}px`, height: `${bat.wifi}px`, objectFit: 'contain', flexShrink: 0, display: 'block' }} onError={(e) => { e.target.src = DEFAULT_WIFI; }} />  
-          <img src={batSrc} alt="Battery" className="z-20" style={{ width: `${batW}px`, height: `${bat.height}px`, objectFit: 'contain', flexShrink: 0, display: 'block' }} onError={(e) => { e.target.src = DEFAULT_BATTERY; }} />  
-        </div>  
-      );  
-    };  
-  
-    function App() {  
-      const [activeTab, setActiveTab] = useState('lock');   
-      const [currentView, setCurrentView] = useState('lock');   
-  
-      const [wp, setWp] = useState({  
-        lock: { url: DEFAULT_LOCK_WP, scale: 100, x: 0, y: 0 },  
-        home: { url: DEFAULT_HOME_WP, scale: 100, x: 0, y: 0 }  
-      });  
-  
-      const [timeFontWeight, setTimeFontWeight] = useState(100);  
-      const [timeStretch, setTimeStretch] = useState(100);  
-      const [lockTheme, setLockTheme] = useState('light');  
-      const [homeTheme, setHomeTheme] = useState('light');  
-      const [lockTopTheme, setLockTopTheme] = useState('light');  
-      const [homeTopTheme, setHomeTopTheme] = useState('light');  
-      const [bat, setBat] = useState({ height: 14.5, wifi: 17.5, signal: 14.5 });   
-      const [flashlightOn, setFlashlightOn] = useState(false);  
-      const [iconMap, setIconMap] = useState({});  
-      const [toastMsg, setToastMsg] = useState('');  
-      const [canvasBg, setCanvasBg] = useState('#f2f2f7');  
-        
-      const [isExporting, setIsExporting] = useState(false);  
-      const [exportImage, setExportImage] = useState(null);  
-      const [exportDimensions, setExportDimensions] = useState({ width: 750, height: 1000 });
-      const [isBatchProcessing, setIsBatchProcessing] = useState(false);
-      const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, message: '' });
-        
-      const [currentTime, setCurrentTime] = useState(new Date());  
-      const screenRef = useRef(null);  
-      const phoneWrapRef = useRef(null);  
-      const doubleWrapRef = useRef(null);
-      const toastTimer = useRef(null);  
-  
-      useEffect(() => {  
-        if (!window.html2canvas) {
-          const script = document.createElement('script');
-          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-          script.async = true;
-          document.body.appendChild(script);
-        }  
-          
-        const timer = setInterval(() => setCurrentTime(new Date()), 10000);  
-        return () => clearInterval(timer);  
-      }, []);  
-  
-      const formatTime = (date) => {  
-        let hours = date.getHours();  
-        let minutes = date.getMinutes();  
-        return `${hours < 10 ? '0'+hours : hours}:${minutes < 10 ? '0'+minutes : minutes}`;  
-      };  
-  
-      const formatDate = (date) => {  
-        const options = { weekday: 'long', month: 'long', day: 'numeric' };  
-        return date.toLocaleDateString('en-US', options);  
-      };  
-  
-      const showToast = (msg) => {  
-        setToastMsg(msg);  
-        if(toastTimer.current) clearTimeout(toastTimer.current);  
-        toastTimer.current = setTimeout(() => setToastMsg(''), 1800);  
-      };  
-  
-      const handleImageUpload = (e, target) => {  
-        const file = e.target.files[0];  
-        if (file) {  
-          const reader = new FileReader();  
-          reader.onload = (evt) => {  
-            setWp(prev => ({ ...prev, [target]: { url: evt.target.result, scale: 100, x: 0, y: 0 } }));  
-            showToast('壁纸已更新');  
-          };  
-          reader.readAsDataURL(file);  
-        }  
-      };  
-  
-      const handleWpChange = (target, field, value) => {  
-        setWp(prev => ({  
-          ...prev,  
-          [target]: { ...prev[target], [field]: Number(value) }  
-        }));  
-      };  
-  
-      // --- 核心修复区：终极光栅化上传引擎 ---  
-      const handleIconAssetsUpload = async (e) => {  
-        const files = e.target.files;  
-        if (!files.length) return;  
-          
-        showToast("正在通过光栅化引擎处理素材...");  
-        const newMap = { ...iconMap };  
-          
-        const promises = Array.from(files).map(file => {  
-          return new Promise((resolve) => {  
-            const reader = new FileReader();  
-            reader.onload = (evt) => {  
-              const dataUrl = evt.target.result;  
-                
-              if (file.name.toLowerCase().endsWith('.svg') || file.type.includes('svg')) {  
-                const img = new Image();  
-                img.onload = () => {  
-                  const canvas = document.createElement('canvas');  
-                  const w = img.width || 300;  
-                  const h = img.height || 150;  
-                  canvas.width = w * 3; // 3倍超采样，确保视网膜级别清晰  
-                  canvas.height = h * 3;  
-                  const ctx = canvas.getContext('2d');  
-                  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);  
-                    
-                  newMap[file.name] = canvas.toDataURL('image/png', 1.0);  
-                  resolve();  
-                };  
-                img.onerror = () => {  
-                  newMap[file.name] = dataUrl;  
-                  resolve();  
-                };  
-                img.src = dataUrl;  
-              } else {  
-                newMap[file.name] = dataUrl;  
-                resolve();  
-              }  
-            };  
-            reader.readAsDataURL(file);  
-          });  
-        });  
-          
-        await Promise.all(promises);  
-        setIconMap(newMap);  
-        showToast(`成功处理并加载 ${files.length} 个安全图标`);  
-      };  
-  
-      const generatePng = async (wrap, width, height) => {
-        const originalCssText = wrap.style.cssText;
-        try {
-          wrap.style.cssText = `
-            width: ${width}px !important;
-            height: ${height}px !important;
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            z-index: 99999 !important;
-            transform: none !important;
-            background-color: ${canvasBg} !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            margin: 0 !important;
-            opacity: 1 !important;
-          `;
-          await new Promise(resolve => setTimeout(resolve, 400));
-          const canvas = await window.html2canvas(wrap, {
-            backgroundColor: canvasBg,
-            scale: 1,
-            width: width,
-            height: height,
-            useCORS: true,
-            allowTaint: true,
-            logging: false,
-          });
-          const dataUrl = canvas.toDataURL('image/png', 1.0);
-          // 立即释放 canvas 内存
-          canvas.width = 1; canvas.height = 1;
-          return dataUrl;
-        } finally {
-          wrap.style.cssText = originalCssText;
-        }
-      };
-
-      const batchProcess = async () => {
-        if (!window.html2canvas) {
-          showToast("截图服务加载中，请稍候...");
-          return;
-        }
-
-        const detectRegionLuminance = (blobUrl, yStart, yEnd) => new Promise(resolve => {
-          const img = new Image();
-          img.onload = () => {
-            const sw = 120, sh = 60;
-            const canvas = document.createElement('canvas');
-            canvas.width = sw; canvas.height = sh;
-            const ctx = canvas.getContext('2d');
-            const srcY = img.height * yStart;
-            const srcH = img.height * (yEnd - yStart);
-            ctx.drawImage(img, 0, srcY, img.width, srcH, 0, 0, sw, sh);
-            const d = ctx.getImageData(0, 0, sw, sh).data;
-            let t = 0;
-            for (let i = 0; i < d.length; i += 4)
-              t += 0.2126 * d[i] + 0.7152 * d[i+1] + 0.0722 * d[i+2];
-            canvas.width = 1; canvas.height = 1; 
-            resolve(t / (sw * sh));
-          };
-          img.onerror = () => resolve(128);
-          img.src = blobUrl;
-        });
-
-        try {
-          const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
-          
-          let foldersToProcess = [];
-          for await (const entry of dirHandle.values()) {
-            if (entry.kind === 'directory' && entry.name !== '批量导出') {
-              foldersToProcess.push(entry);
-            }
-          }
-
-          if (foldersToProcess.length === 0) {
-            showToast("未找到需要处理的文件夹！");
-            return;
-          }
-
-          setIsBatchProcessing(true);
-          setBatchProgress({ current: 0, total: foldersToProcess.length, message: '开始批量处理...' });
-
-          const rootOutHandle = await dirHandle.getDirectoryHandle('批量导出', { create: true });
-
-          const writePngNow = async (dataUrl, folderH, filename) => {
-            const res = await fetch(dataUrl);
-            const blob = await res.blob();
-            const fh = await folderH.getFileHandle(filename, { create: true });
-            const writable = await fh.createWritable();
-            await writable.write(blob);
-            await writable.close();
-          };
-
-          const writeDoneMarker = async (folderH) => {
-            const fh = await folderH.getFileHandle('_done', { create: true });
-            const writable = await fh.createWritable();
-            await writable.write(new Blob([new Date().toISOString()]));
-            await writable.close();
-          };
-
-          const isDone = async (parentH, name) => {
-            try {
-              const f = await parentH.getDirectoryHandle(name);
-              await f.getFileHandle('_done');
-              return true;
-            } catch { return false; }
-          };
-
-          let skipped = 0;
-
-          for (let i = 0; i < foldersToProcess.length; i++) {
-            const folderHandle = foldersToProcess[i];
-            const outFolderName = `${folderHandle.name}B`;
-
-            if (await isDone(rootOutHandle, outFolderName)) {
-              skipped++;
-              setBatchProgress({
-                current: i + 1,
-                total: foldersToProcess.length,
-                message: `⏭ 已跳过 ${skipped} 个 · 处理中: ${i + 1}/${foldersToProcess.length}`
-              });
-              await new Promise(r => setTimeout(r, 20));
-              continue;
-            }
-
-            setBatchProgress({ current: i + 1, total: foldersToProcess.length, message: `正在处理: ${folderHandle.name}` });
-            
-            try {
-              let lockEntry = null;
-              let homeEntry = null;
-              let allImages = [];
-
-              for await (const entry of folderHandle.values()) {
-                if (entry.kind === 'file' && entry.name.match(/\.(jpg|jpeg|png|webp|gif)$/i)) {
-                  allImages.push(entry);
-                  const baseName = entry.name.replace(/\.[^.]+$/, '');
-                  if (baseName.endsWith('1')) lockEntry = entry;
-                  else if (baseName.endsWith('2')) homeEntry = entry;
-                }
-              }
-
-              if (!lockEntry && allImages.length > 0) lockEntry = allImages[0];
-              if (!homeEntry && allImages.length > 1) homeEntry = allImages[1];
-              else if (!homeEntry && lockEntry) homeEntry = lockEntry;
-
-              if (!lockEntry) continue;
-
-              const lockBlobUrl = URL.createObjectURL(await lockEntry.getFile());
-              const homeBlobUrl = (lockEntry === homeEntry)
-                ? lockBlobUrl
-                : URL.createObjectURL(await homeEntry.getFile());
-
-              const lockTopLum  = await detectRegionLuminance(lockBlobUrl, 0, 0.22);
-              const lockBotLum  = await detectRegionLuminance(lockBlobUrl, 0.78, 1.0);
-              const homeTopLum  = await detectRegionLuminance(homeBlobUrl, 0, 0.12);
-              const homeBotLum  = await detectRegionLuminance(homeBlobUrl, 0.78, 1.0);
-              setLockTopTheme(lockTopLum > 155 ? 'dark' : 'light');
-              setLockTheme(lockBotLum > 155 ? 'dark' : 'light');
-              setHomeTopTheme(homeTopLum > 155 ? 'dark' : 'light');
-              setHomeTheme(homeBotLum > 155 ? 'dark' : 'light');
-
-              const lockDims = await getImageDimensions(lockBlobUrl);
-              const homeDims = await getImageDimensions(homeBlobUrl);
-
-              setWp({
-                lock: { url: lockBlobUrl, scale: calculateOptimalScale(lockDims.width, lockDims.height), x: 0, y: 0 },
-                home: { url: homeBlobUrl, scale: calculateOptimalScale(homeDims.width, homeDims.height), x: 0, y: 0 }
-              });
-
-              await new Promise(r => setTimeout(r, 600));
-
-              const outFolderHandle = await rootOutHandle.getDirectoryHandle(outFolderName, { create: true });
-
-              // 截图 → 立即写盘 (增加等待时间至 550ms，确保透明度动画执行完毕)
-              setCurrentView('lock');
-              await new Promise(r => setTimeout(r, 550));
-              await writePngNow(await generatePng(phoneWrapRef.current, 750, 1000), outFolderHandle, '锁屏.png');
-
-              setCurrentView('home');
-              await new Promise(r => setTimeout(r, 550));
-              await writePngNow(await generatePng(phoneWrapRef.current, 750, 1000), outFolderHandle, '墙纸.png');
-
-              await writePngNow(await generatePng(doubleWrapRef.current, 1000, 1000), outFolderHandle, '双排.png');
-
-              await writeDoneMarker(outFolderHandle);
-
-              URL.revokeObjectURL(lockBlobUrl);
-              if (homeBlobUrl !== lockBlobUrl) URL.revokeObjectURL(homeBlobUrl);
-
-              await new Promise(r => setTimeout(r, 600));
-
-            } catch (itemErr) {
-              console.error(`处理 ${folderHandle.name} 失败:`, itemErr);
-              setBatchProgress(prev => ({ ...prev, message: `⚠️ 跳过出错项: ${folderHandle.name}` }));
-              await new Promise(r => setTimeout(r, 400));
-            }
-          }
-          
-          setBatchProgress({ current: foldersToProcess.length, total: foldersToProcess.length, message: '批量处理完成！' });
-          showToast("所有文件夹处理完毕！");
-        } catch (error) {
-          console.error("Batch processing failed or cancelled:", error);
-          showToast("批量处理已取消或出错！");
-        } finally {
-          setIsBatchProcessing(false);
-        }
-      };
-
-      const saveShot = async (isDouble = false) => {  
-        if (!window.html2canvas) {
-          showToast("截图服务加载中，请稍候...");
-          return;
-        }  
-        if (isExporting) return;  
-  
-        setIsExporting(true);  
-        await new Promise(r => setTimeout(r, 50));  
-          
-        const wrap = isDouble ? doubleWrapRef.current : phoneWrapRef.current;  
-        const width = isDouble ? 1000 : 750;
-        const height = 1000;
-
-        setExportDimensions({ width, height });
-  
-        try {  
-          const dataUrl = await generatePng(wrap, width, height);
-            
-          setExportImage(dataUrl);  
-          showToast('生成成功！');  
-            
-          try {  
-            const link = document.createElement('a');  
-            link.download = `iOS26-Preview-${width}x${height}.png`;  
-            link.href = dataUrl;  
-            link.click();  
-          } catch (err) {  
-            console.log('自动下载被拦截');  
-          }  
-  
-        } catch (err) {  
-          console.error("截图或导出失败:", err);  
-          showToast('截图失败，请确保导入了所有图片！');  
-        } finally {  
-          setIsExporting(false);  
-        }  
-      };  
-  
-      const AppIcon = ({ app, size = 70, theme = 'light' }) => {  
-        const imgSrc = iconMap[app.img] || app.img;   
-        return (  
-          <div className="flex flex-col items-center gap-[5px] cursor-pointer active:scale-90 transition-transform" onClick={() => showToast(`打开 ${app.name}`)}>  
-            <div   
-              className="relative rounded-[17px] overflow-hidden flex-shrink-0"  
-              style={{ width: size, height: size, backgroundColor: 'transparent' }}   
-            >  
-              {imgSrc && <img src={imgSrc} alt={app.name} className="absolute inset-0 w-full h-full object-cover z-0 block" onError={(e) => { e.target.src = TRANSPARENT_PIXEL; }} />}  
-            </div>  
-          </div>  
-        );  
-      };  
-
-      // 修复重点：去除了外层和内部 flex 布局，全部使用绝对定位(absolute)，保证截图时坐标100%固定
-      const renderLockScreenContent = (isVisible) => (
-        <div   
-          className="absolute inset-0 z-10 transition-opacity duration-500"  
-          style={{ opacity: isVisible ? 1 : 0, pointerEvents: isVisible ? 'auto' : 'none' }}  
-        >  
-          <div   
-            className="absolute inset-0 z-0 bg-cover bg-center"  
-            style={{  
-              backgroundImage: `url(${wp.lock.url}), linear-gradient(160deg, #0a0a2e 0%, #1a0a3e 35%, #0a1a2e 70%, #000d1a 100%)`,  
-              backgroundSize: `${wp.lock.scale}%`,  
-              backgroundPosition: `${50 + wp.lock.x}% ${50 + wp.lock.y}%`,  
-            }}  
-          />  
-
-          <div className="absolute top-0 left-0 right-0 z-20 flex justify-end items-center px-[28px] pt-[16px] pb-[4px] pointer-events-none">  
-            <StatusBarIcons theme={lockTopTheme === 'dark' ? 'black' : 'white'} iconMap={iconMap} bat={bat} />  
-          </div>  
-            
-          {/* 将时间焊死在距顶部 90px 处 */}
-          <div className="absolute top-[90px] left-0 right-0 z-10 flex flex-col items-center pointer-events-none">  
-            <div className="text-[18px] font-medium tracking-[0.2px] mb-1" style={{ color: lockTopTheme === 'dark' ? '#000000' : '#ffffff', opacity: 0.88 }}>  
-              {formatDate(currentTime)}  
-            </div>  
-            <div   
-              className="text-[96px] tracking-[-4px] leading-none transition-all duration-200 block"   
-              style={{   
-                color: lockTopTheme === 'dark' ? '#000000' : '#ffffff',   
-                fontWeight: timeFontWeight,   
-                fontFeatureSettings: '"tnum"',   
-                transform: `scaleY(${timeStretch / 100})`,   
-                transformOrigin: 'top center',  
-                fontFamily: '"SF Pro Display", "SF Pro", -apple-system, BlinkMacSystemFont, sans-serif'   
-              }}  
-            >  
-              {formatTime(currentTime)}  
-            </div>  
-          </div>  
-
-          {/* 将底部按钮焊死在距底部 46px 处 */}
-          <div className="absolute bottom-[46px] left-0 right-0 px-[46px] flex justify-between items-center pointer-events-auto z-20">  
-            <div   
-              className={`w-[64px] h-[64px] rounded-full flex items-center justify-center cursor-pointer transition-all active:scale-90 border-[0.5px] backdrop-blur-[22px] ${  
-                lockTheme === 'dark'   
-                  ? (flashlightOn ? 'bg-[#ffffff]/90 border-white/50' : 'bg-black/30 border-white/20 hover:bg-black/40 shadow-lg shadow-black/20')  
-                  : (flashlightOn ? 'bg-white/90 border-white/50' : 'bg-white/20 border-white/20 hover:bg-white/30 shadow-sm')  
-              }`}  
-              style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }} 
-              onClick={() => { setFlashlightOn(!flashlightOn); showToast(!flashlightOn ? '手电筒：开' : '手电筒：关'); }}  
-            >  
-              <img   
-                src={iconMap['Symbol.svg'] || 'Symbol.svg'}   
-                alt="Flashlight"   
-                className="w-[52px] h-[52px] object-contain scale-[1.35] transition-all"   
-                style={getIconStyle(lockTheme === 'dark', flashlightOn)}   
-                onError={(e) => { e.target.src = TRANSPARENT_PIXEL; }}  
-              />  
-            </div>  
-            <div   
-              className={`w-[64px] h-[64px] rounded-full flex items-center justify-center cursor-pointer transition-all active:scale-90 border-[0.5px] backdrop-blur-[22px] ${  
-                lockTheme === 'dark' ? 'bg-black/30 border-white/20 hover:bg-black/40 shadow-lg shadow-black/20' : 'bg-white/20 border-white/20 hover:bg-white/30 shadow-sm'  
-              }`}  
-              style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }} 
-              onClick={() => showToast('📸 相机')}  
-            >  
-              <img   
-                src={iconMap['Symbol (1).svg'] || 'Symbol (1).svg'}   
-                alt="Camera"   
-                className="w-[50px] h-[50px] object-contain scale-[1.25] transition-all"   
-                style={getIconStyle(lockTheme === 'dark', false)}   
-                onError={(e) => { e.target.src = TRANSPARENT_PIXEL; }}  
-              />  
-            </div>  
-          </div>  
-        </div>  
-      );
-
-      // 同理，修复桌面的布局问题，避免后续增加桌面组件时发生同样的位移问题
-      const renderHomeScreenContent = (isVisible) => (
-        <div   
-          className="absolute inset-0 z-10 transition-opacity duration-500"  
-          style={{ opacity: isVisible ? 1 : 0, pointerEvents: isVisible ? 'auto' : 'none' }}  
-        >  
-          <div   
-            className="absolute inset-0 z-0 bg-cover bg-center"  
-            style={{  
-              backgroundImage: `url(${wp.home.url}), linear-gradient(148deg, #160530 0%, #071422 40%, #001c14 100%)`,  
-              backgroundSize: `${wp.home.scale}%`,  
-              backgroundPosition: `${50 + wp.home.x}% ${50 + wp.home.y}%`,  
-            }}  
-          />  
-            
-          <div className="absolute top-0 left-0 right-0 z-20 flex justify-between items-center px-[28px] pt-[16px] pb-[4px]">  
-            <div className={`text-[15.5px] font-semibold tracking-[-0.12px] ${homeTopTheme === 'dark' ? 'text-black' : 'text-white'}`} style={{ fontFeatureSettings: '"tnum"' }}>  
-              {formatTime(currentTime)}  
-            </div>  
-            <StatusBarIcons theme={homeTopTheme === 'dark' ? 'black' : 'white'} iconMap={iconMap} bat={bat} />  
-          </div>  
-
-          <div className="absolute top-[50px] left-0 right-0 z-10 px-[18px] pt-[20px] grid grid-cols-4 gap-y-[32px]">  
-            {HOME_APPS.map(app => <AppIcon key={app.id} app={app} size={70} theme={homeTheme} />)}  
-          </div>  
-
-          {/* 将底部的翻页点与 Dock 栏彻底固定在底部 */}
-          <div className="absolute bottom-0 left-0 right-0 w-full flex flex-col z-20">  
-            <div className="flex justify-center gap-[5px] my-[6px] relative z-10">  
-              <div className={`w-[18px] h-[6px] rounded-[3px] transition-colors ${homeTheme === 'dark' ? 'bg-black/60' : 'bg-white/85'}`}></div>  
-              <div className={`w-[6px] h-[6px] rounded-full transition-colors ${homeTheme === 'dark' ? 'bg-black/30' : 'bg-white/30'}`}></div>  
-              <div className={`w-[6px] h-[6px] rounded-full transition-colors ${homeTheme === 'dark' ? 'bg-black/30' : 'bg-white/30'}`}></div>  
-            </div>  
-
-            <div className={`relative z-20 mx-[18px] mb-[8px] backdrop-blur-[46px] rounded-[34px] border-[0.5px] px-[12px] py-[13px] flex justify-around items-center transition-all ${  
-              homeTheme === 'dark' ? 'bg-black/30 border-white/20 shadow-lg shadow-black/20' : 'bg-white/10 border-white/20 shadow-sm'  
-            }`} style={{ WebkitMaskImage: '-webkit-radial-gradient(white, black)' }}>  
-              {DOCK_APPS.map(app => <AppIcon key={app.id} app={app} size={62} theme={homeTheme} />)}  
-            </div>  
-
-            <div className={`w-[130px] h-[5px] rounded-[3px] mx-auto mt-[6px] mb-[9px] relative z-20 transition-colors ${homeTheme === 'dark' ? 'bg-black/45' : 'bg-white/45'}`}></div>  
-          </div>
-        </div>  
-      );
-  
-      return (  
-        <div className="min-h-screen bg-white flex items-start justify-center gap-7 p-7 font-sans relative" style={{ fontFamily: '"SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>  
-            
-          {isExporting && !exportImage && (  
-            <div className="fixed inset-0 z-[2000] bg-white/80 backdrop-blur-sm flex items-center justify-center animate-fade-in">  
-              <div className="flex flex-col items-center gap-5 bg-white p-8 rounded-3xl shadow-2xl border border-gray-100">  
-                <div className="w-12 h-12 border-4 border-[#007aff] border-t-transparent rounded-full animate-spin"></div>  
-                <div className="text-center">  
-                  <p className="text-gray-800 font-bold text-base mb-1">正在生成超清截图</p>  
-                  <p className="text-gray-500 text-xs">正在进行 750x1000 无损级采样，请勿关闭页面...</p>  
-                </div>  
-              </div>  
-            </div>  
-          )}  
-  
-          {exportImage && (  
-            <div className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">  
-              <div className="bg-white rounded-3xl p-6 w-full max-w-sm flex flex-col items-center shadow-2xl relative">  
-                <button onClick={() => setExportImage(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-800 bg-gray-100 rounded-full w-8 h-8 flex items-center justify-center transition-colors">✕</button>  
-                <h3 className="text-lg font-bold text-gray-800 mb-2">导出成功</h3>  
-                <p className="text-xs text-gray-500 mb-5 text-center leading-relaxed">  
-                  如果未触发自动下载<br/>请<strong className="text-[#007aff]">长按图片</strong>或<strong className="text-[#007aff]">右键选择图片另存为</strong>。<br/>  
-                  <span className="inline-block mt-1 px-2 py-0.5 bg-gray-100 rounded text-gray-600">尺寸: {exportDimensions.width} × {exportDimensions.height} 像素</span>  
-                </p>  
-                <div className="bg-gray-50 rounded-2xl p-3 w-full max-h-[50vh] overflow-y-auto flex justify-center border border-gray-100">  
-                  <img src={exportImage} alt="Exported Preview" className="w-full h-auto rounded-xl shadow-sm" style={{ maxWidth: '240px' }} />  
-                </div>  
-                <button   
-                  onClick={() => setExportImage(null)}  
-                  className="mt-6 w-full py-3.5 bg-[#007aff] text-white rounded-xl font-semibold hover:bg-[#0066d6] active:scale-95 transition-all shadow-md shadow-blue-500/20"  
-                >  
-                  完成  
-                </button>  
-              </div>  
-            </div>  
-          )}  
-  
-          <div className="bg-[#f5f5f7] border border-[#d1d1d6] rounded-[18px] p-5 w-[280px] text-[#1c1c1e] sticky top-7 max-h-[calc(100vh-56px)] overflow-y-auto flex-shrink-0 shadow-sm" style={{ scrollbarWidth: 'thin' }}>  
-            <div className="text-[15px] font-bold tracking-[-0.3px] mb-[2px]">iOS 26 模拟器</div>  
-            <div className="text-[11px] text-[#8e8e93] mb-4">iPhone 15 · 控制面板</div>  
-              
-            <div className="flex bg-[#e5e5ea] rounded-[10px] p-[3px] mb-4">  
-              <button onClick={() => { setActiveTab('lock'); setCurrentView('lock'); }} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${activeTab === 'lock' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>🔒 锁屏</button>  
-              <button onClick={() => { setActiveTab('home'); setCurrentView('home'); }} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${activeTab === 'home' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>📱 桌面</button>  
-              <button onClick={() => setActiveTab('statusbar')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${activeTab === 'statusbar' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>🔋 状态栏</button>  
-              <button onClick={() => setActiveTab('export')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${activeTab === 'export' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>💾 导出</button>  
-            </div>  
-  
-            <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden mb-4">  
-              <label className="flex items-center gap-2 p-3 text-[12px] text-[#007aff] cursor-pointer hover:bg-gray-50">  
-                <input type="file" multiple accept="image/*" onChange={handleIconAssetsUpload} className="hidden" />  
-                <UploadIcon /> 导入本地高清素材图标  
-              </label>  
-            </div>  
-  
-            {activeTab === 'lock' && (  
-              <div className="animate-fade-in">  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] my-[10px]">锁屏壁纸</div>  
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden mb-2">  
-                  <div className="flex items-center justify-between p-3">  
-                    <div className="text-[13px] text-[#1c1c1e]">上传壁纸<span className="block text-[10px] text-[#8e8e93] mt-[1px]">支持 JPG / PNG</span></div>  
-                    <label className="bg-[#007aff] text-white text-[11px] px-3 py-1.5 rounded-[8px] cursor-pointer font-semibold hover:bg-[#0066d6] active:scale-95 transition-all">  
-                      <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'lock')} className="hidden" />  
-                      更换  
-                    </label>  
-                  </div>  
-                </div>  
-                  
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden p-3 flex flex-col gap-3">  
-                  <SliderControl label="缩放大小 (%)" value={wp.lock.scale} min={50} max={200} step={1} onChange={v => handleWpChange('lock', 'scale', v)} />  
-                  <SliderControl label="水平位置 (X)" value={wp.lock.x} min={-50} max={50} step={1} onChange={v => handleWpChange('lock', 'x', v)} />  
-                  <SliderControl label="垂直位置 (Y)" value={wp.lock.y} min={-50} max={50} step={1} onChange={v => handleWpChange('lock', 'y', v)} />  
-                </div>  
-  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mt-[14px] mb-[7px]">毛玻璃与组件主题</div>  
-                <div className="flex bg-[#e5e5ea] rounded-[10px] p-[3px] mb-4">  
-                  <button onClick={() => setLockTheme('light')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${lockTheme === 'light' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>浅色UI</button>  
-                  <button onClick={() => setLockTheme('dark')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${lockTheme === 'dark' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>深色UI</button>  
-                </div>  
-  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mt-[14px] mb-[7px]">顶部时间与状态栏</div>  
-                <div className="flex bg-[#e5e5ea] rounded-[10px] p-[3px] mb-4">  
-                  <button onClick={() => setLockTopTheme('light')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${lockTopTheme === 'light' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>浅色内容</button>  
-                  <button onClick={() => setLockTopTheme('dark')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${lockTopTheme === 'dark' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>深色内容</button>  
-                </div>  
-  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mt-[14px] mb-[7px]">时间样式</div>  
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden p-3 flex flex-col gap-3">  
-                  <SliderControl label="字体粗细" value={timeFontWeight} min={100} max={900} step={100} onChange={v => setTimeFontWeight(v)} />  
-                  <SliderControl label="纵向拉伸 (%)" value={timeStretch} min={50} max={200} step={1} onChange={v => setTimeStretch(v)} />  
-                </div>  
-              </div>  
-            )}  
-  
-            {activeTab === 'home' && (  
-              <div className="animate-fade-in">  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] my-[10px]">桌面壁纸</div>  
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden mb-2">  
-                  <div className="flex items-center justify-between p-3">  
-                    <div className="text-[13px] text-[#1c1c1e]">上传壁纸<span className="block text-[10px] text-[#8e8e93] mt-[1px]">支持 JPG / PNG</span></div>  
-                    <label className="bg-[#007aff] text-white text-[11px] px-3 py-1.5 rounded-[8px] cursor-pointer font-semibold hover:bg-[#0066d6] active:scale-95 transition-all">  
-                      <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'home')} className="hidden" />  
-                      更换  
-                    </label>  
-                  </div>  
-                </div>  
-  
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden p-3 flex flex-col gap-3">  
-                  <SliderControl label="缩放大小 (%)" value={wp.home.scale} min={50} max={200} step={1} onChange={v => handleWpChange('home', 'scale', v)} />  
-                  <SliderControl label="水平位置 (X)" value={wp.home.x} min={-50} max={50} step={1} onChange={v => handleWpChange('home', 'x', v)} />  
-                  <SliderControl label="垂直位置 (Y)" value={wp.home.y} min={-50} max={50} step={1} onChange={v => handleWpChange('home', 'y', v)} />  
-                </div>  
-  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mt-[14px] mb-[7px]">Dock栏与文字主题</div>  
-                <div className="flex bg-[#e5e5ea] rounded-[10px] p-[3px] mb-4">  
-                  <button onClick={() => setHomeTheme('light')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${homeTheme === 'light' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>浅色UI</button>  
-                  <button onClick={() => setHomeTheme('dark')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${homeTheme === 'dark' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>深色UI</button>  
-                </div>  
-  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mt-[14px] mb-[7px]">顶部时间与状态栏</div>  
-                <div className="flex bg-[#e5e5ea] rounded-[10px] p-[3px] mb-4">  
-                  <button onClick={() => setHomeTopTheme('light')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${homeTopTheme === 'light' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>浅色内容</button>  
-                  <button onClick={() => setHomeTopTheme('dark')} className={`flex-1 py-[7px] text-[11px] font-medium rounded-[8px] transition-all ${homeTopTheme === 'dark' ? 'bg-white text-[#1c1c1e] shadow-sm' : 'text-[#8e8e93] hover:text-[#555]'}`}>深色内容</button>  
-                </div>  
-              </div>  
-            )}  
-  
-            {activeTab === 'statusbar' && (  
-              <div className="animate-fade-in">  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mb-[7px]">状态栏图标比例微调</div>  
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden p-3 flex flex-col gap-3">  
-                  <SliderControl label="信号高度" value={bat.signal} min={8} max={30} step={0.5} onChange={v => setBat({...bat, signal: v})} />  
-                  <SliderControl label="WiFi高度" value={bat.wifi} min={8} max={30} step={0.5} onChange={v => setBat({...bat, wifi: v})} />  
-                  <SliderControl label="电池高度" value={bat.height} min={8} max={30} step={0.5} onChange={v => setBat({...bat, height: v})} />  
-                </div>  
-              </div>  
-            )}  
-  
-            {activeTab === 'export' && (  
-              <div className="animate-fade-in">  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mb-[7px]">画布背景色</div> 
-                <div className="grid grid-cols-5 gap-2 mb-4"> 
-                  {[ 
-                    { name: '纯白', value: '#ffffff' }, 
-                    { name: '95%灰', value: '#f2f2f7' }, 
-                    { name: '90%灰', value: '#e5e5ea' }, 
-                    { name: '冷灰', value: '#f0f4f8' }, 
-                    { name: '暖灰', value: '#fcfaf8' }, 
-                  ].map(c => ( 
-                    <button 
-                      key={c.value} 
-                      onClick={() => setCanvasBg(c.value)} 
-                      className={`h-[32px] rounded-full border transition-all text-[10px] flex items-center justify-center font-medium ${canvasBg === c.value ? 'border-[#007aff] text-[#007aff] ring-2 ring-[#007aff]/20' : 'border-[#d1d1d6] text-[#8e8e93] hover:border-[#8e8e93]'}`} 
-                      style={{ backgroundColor: c.value }} 
-                      title={c.name} 
-                    > 
-                      {canvasBg === c.value ? c.name : ''} 
-                    </button> 
-                  ))} 
-                </div> 
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>何物设计部 · AI 图片生成</title>
+<style>
+:root{
+  --brand:#b4001e;
+  --brand-light:rgba(180,0,30,0.06);
+  --brand-mid:rgba(180,0,30,0.15);
+  --brand-border:rgba(180,0,30,0.25);
+  --bg:#f0eeeb;
+  --surface:#ffffff;
+  --surface2:#f7f6f4;
+  --line:#e8e5e1;
+  --line2:#d8d4cf;
+  --t1:#1a1814;
+  --t2:#6b6760;
+  --t3:#b0aca6;
+  --r:10px;
+  --sh:0 1px 3px rgba(0,0,0,.05),0 4px 12px rgba(0,0,0,.04);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Noto Sans SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--t1)}
  
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] my-[10px]">截图导出</div>  
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden mb-4 p-3">  
-                  <div className="text-[13px] text-[#1c1c1e]">生成 750×1000 图像<span className="block text-[10px] text-[#8e8e93] mt-[1px]">精准比例，彻底消除白边</span></div>  
-                </div>  
-                  
-                <button   
-                  onClick={() => saveShot(false)}   
-                  disabled={isExporting || isBatchProcessing}   
-                  className={`w-full mb-3 py-3.5 rounded-[12px] text-[14px] font-semibold transition-all text-white ${isExporting || isBatchProcessing ? 'bg-[#c7c7cc] cursor-not-allowed' : 'bg-[#1c1c1e] hover:bg-[#3a3a3c] active:scale-95'}`}  
-                >  
-                  {isExporting ? '📸 正在生成...' : '📸 立即生成并保存单图'}  
-                </button>  
+/* HEADER */
+.hdr{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 28px;background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:10}
+.hdr-l{display:flex;align-items:center;gap:16px}
+.logo{height:22px;width:auto;display:block}
+.hdr-sep{width:1px;height:16px;background:var(--line2)}
+.hdr-name{font-size:13px;color:var(--t2);letter-spacing:.02em}
+.hdr-r{display:flex;align-items:center;gap:8px}
+.chip{font-size:11px;font-weight:500;padding:4px 10px;border-radius:20px;background:var(--brand-light);color:var(--brand);border:1px solid var(--brand-border);transition:all .2s;}
+.chip-status{font-size:11px;padding:4px 10px;border-radius:20px;background:var(--surface2);color:var(--t3);border:1px solid var(--line);display:flex;align-items:center;gap:5px}
+.dot{width:5px;height:5px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 2px rgba(34,197,94,.2)}
 
-                <button   
-                  onClick={() => saveShot(true)}   
-                  disabled={isExporting || isBatchProcessing}   
-                  className={`w-full py-3.5 rounded-[12px] text-[14px] font-semibold transition-all text-white ${isExporting || isBatchProcessing ? 'bg-[#c7c7cc] cursor-not-allowed' : 'bg-[#1c1c1e] hover:bg-[#3a3a3c] active:scale-95'}`}  
-                >  
-                  {isExporting ? '📸 正在生成...' : '📸 立即生成双图排版 (1000x1000)'}  
-                </button>  
+/* LAYOUT */
+.wrap{display:grid;grid-template-columns:460px 1fr;height:calc(100vh - 52px)}
 
-                <div className="text-[10px] font-semibold uppercase tracking-[1.1px] text-[#8e8e93] mt-[20px] mb-[7px]">批量自动化处理</div>
-                <div className="bg-white rounded-[12px] border border-[#e5e5ea] overflow-hidden mb-4 p-3">  
-                  <div className="text-[13px] text-[#1c1c1e]">选择文件夹进行全自动处理<span className="block text-[10px] text-[#8e8e93] mt-[1px]">文件名末尾为 1 → 锁屏，末尾为 2 → 桌面；自动检测背景亮度；崩溃后重跑自动跳过已完成项</span></div>  
-                </div> 
+/* LEFT */
+.left{background:var(--surface);border-right:1px solid var(--line);overflow-y:auto;display:flex;flex-direction:column;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.left::-webkit-scrollbar{width:3px}
+.left::-webkit-scrollbar-thumb{background:var(--line2);border-radius:3px}
+.left-scroll{padding:20px 22px 0;display:flex;flex-direction:column;gap:14px;flex:1}
 
-                {isBatchProcessing && (
-                  <div className="mb-3">
-                    <div className="text-[11px] text-[#8e8e93] flex justify-between mb-1">
-                      <span>{batchProgress.message}</span>
-                      <span>{batchProgress.current} / {batchProgress.total}</span>
-                    </div>
-                    <div className="w-full bg-[#e5e5ea] h-2 rounded-full overflow-hidden">
-                      <div 
-                        className="bg-[#007aff] h-full transition-all duration-300" 
-                        style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                )}
+/* CARDS */
+.card{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--surface)}
+.card-hd{padding:13px 15px 0;display:flex;align-items:center;gap:9px}
+.num{width:19px;height:19px;border-radius:5px;background:var(--brand);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.card-title{font-size:11px;font-weight:600;color:var(--t2);letter-spacing:.07em;text-transform:uppercase}
+.card-bd{padding:10px 15px 15px}
 
-                <button   
-                  onClick={batchProcess}   
-                  disabled={isExporting || isBatchProcessing}   
-                  className={`w-full py-3.5 rounded-[12px] text-[14px] font-semibold transition-all text-white ${isExporting || isBatchProcessing ? 'bg-[#c7c7cc] cursor-not-allowed' : 'bg-[#007aff] hover:bg-[#0066d6] active:scale-95'}`}  
-                >  
-                  {isBatchProcessing ? '🔄 批量处理中...' : '🚀 开始批量自动化生成'}  
-                </button>
-                  
-                <div className="mt-4 text-[11px] text-[#8e8e93] leading-relaxed">  
-                  * 本地脱机版可以直接抓取高分辨率画面。<br/>* 您已摆脱浏览器沙盒的安全限制。<br/>* 双击 HTML 即可无缝运行。  
-                </div>  
-              </div>  
-            )}  
-  
-          </div>  
-  
-          <div className="relative flex-shrink-0" style={{ width: '488px', height: '650px' }}>  
-            <div   
-              id="phone-wrap-capture"  
-              ref={phoneWrapRef}   
-              className="flex items-center justify-center absolute top-0 left-0 transition-colors duration-300"  
-              style={{   
-                width: '750px',   
-                height: '1000px',   
-                transform: 'scale(0.65)',   
-                transformOrigin: 'top left', 
-                backgroundColor: canvasBg 
-              }}  
-            >  
-              <div   
-                ref={screenRef}   
-                className="relative flex-shrink-0"  
-                style={{  
-                  width: '393px', height: '852px', borderRadius: '54px',  
-                  boxShadow: `0 0 0 1.5px ${canvasBg}`, 
-                  backgroundColor: canvasBg 
-                }}  
-              >  
-  
-                <div className="absolute inset-0 rounded-[54px] overflow-hidden">  
-                    
-                  <div className="absolute top-[12px] left-1/2 -translate-x-1/2 w-[118px] h-[34px] bg-black rounded-[20px] z-[150] transition-all cursor-pointer hover:w-[248px] hover:h-[62px] hover:rounded-[31px]">  
-                    <div className="absolute right-[18px] top-1/2 -translate-y-1/2 w-[10px] h-[10px] rounded-full" style={{ background: 'radial-gradient(circle at 38% 32%, #121228, #000)', boxShadow: 'inset 0 0 0 2px #1a1a2a, 0 0 4px rgba(30,30,120,0.5)' }}></div>  
-                  </div>  
-  
-                  {/* Lock Screen */}  
-                  {renderLockScreenContent(currentView === 'lock')}
-  
-                  {/* Home Screen */}  
-                  {renderHomeScreenContent(currentView === 'home')}
-  
-                </div>  
-              </div>  
-            </div>  
+/* PROMPT */
+.prompt-box{position:relative}
+.prompt-ta{
+  width:100%;font-size:14px;line-height:1.7;
+  border:1.5px solid var(--line);border-radius:8px;
+  padding:12px 13px 38px;background:var(--surface2);color:var(--t1);
+  resize:none;outline:none;height:132px;
+  transition:border-color .18s,box-shadow .18s,background .18s;
+  font-family:inherit;
+}
+.prompt-ta::placeholder{color:var(--t3);font-size:13px}
+.prompt-ta:focus{border-color:var(--brand);background:#fff;box-shadow:0 0 0 3px var(--brand-light)}
+.prompt-btm{position:absolute;bottom:9px;left:11px;right:11px;display:flex;justify-content:space-between;align-items:center;pointer-events:none}
+.prompt-hint{font-size:11px;color:var(--t3)}
+.char-count{font-size:11px;color:var(--t3)}
+.tags{display:flex;flex-wrap:wrap;gap:5px;margin-margin-top:9px}
+.tag{font-size:12px;padding:4px 9px;border-radius:20px;border:1px solid var(--line);background:var(--surface2);color:var(--t2);cursor:pointer;transition:all .14s;user-select:none}
+.tag:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-light)}
 
-            {/* Hidden container for double export */}
-            <div   
-              id="double-wrap-capture"  
-              ref={doubleWrapRef}   
-              className="flex items-center justify-center absolute top-0 left-0 transition-colors duration-300 pointer-events-none"  
-              style={{   
-                width: '1000px',   
-                height: '1000px',   
-                transform: 'scale(0.001)',   
-                transformOrigin: 'top left', 
-                backgroundColor: canvasBg,
-                opacity: 0,
-                zIndex: -9999
-              }}  
-            >  
-              <div className="flex gap-8 items-center justify-center">
-                <div   
-                  className="relative flex-shrink-0"  
-                  style={{  
-                    width: '393px', height: '852px', borderRadius: '54px',  
-                    boxShadow: `0 0 0 1.5px ${canvasBg}, 0 20px 60px -10px rgba(0,0,0,0.15)`, 
-                    backgroundColor: canvasBg 
-                  }}  
-                >  
-                  <div className="absolute inset-0 rounded-[54px] overflow-hidden">  
-                    <div className="absolute top-[12px] left-1/2 -translate-x-1/2 w-[118px] h-[34px] bg-black rounded-[20px] z-[150]">  
-                      <div className="absolute right-[18px] top-1/2 -translate-y-1/2 w-[10px] h-[10px] rounded-full" style={{ background: 'radial-gradient(circle at 38% 32%, #121228, #000)', boxShadow: 'inset 0 0 0 2px #1a1a2a, 0 0 4px rgba(30,30,120,0.5)' }}></div>  
-                    </div>  
-                    {renderLockScreenContent(true)}
-                  </div>  
-                </div>  
+/* SETTINGS */
+.sg{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fg{display:flex;flex-direction:column;gap:5px}
+.fg label{font-size:11px;font-weight:600;color:var(--t3);letter-spacing:.06em;text-transform:uppercase}
+.sel-wrap{position:relative}
+.sel-wrap select{
+  width:100%;font-size:13px;
+  border:1.5px solid var(--line);border-radius:8px;
+  padding:9px 30px 9px 11px;background:var(--surface2);color:var(--t1);
+  outline:none;cursor:pointer;appearance:none;
+  transition:border-color .18s,box-shadow .18s;font-family:inherit;
+}
+.sel-wrap select:focus{border-color:var(--brand);background:#fff;box-shadow:0 0 0 3px var(--brand-light)}
+.sel-wrap::after{content:'';position:absolute;right:10px;top:50%;transform:translateY(-50%);width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--t3);pointer-events:none}
+.sel-wrap select option{background:#fff}
+.full-width { grid-column: 1 / -1; } /* 新增全宽类 */
 
-                <div   
-                  className="relative flex-shrink-0"  
-                  style={{  
-                    width: '393px', height: '852px', borderRadius: '54px',  
-                    boxShadow: `0 0 0 1.5px ${canvasBg}, 0 20px 60px -10px rgba(0,0,0,0.15)`, 
-                    backgroundColor: canvasBg 
-                  }}  
-                >  
-                  <div className="absolute inset-0 rounded-[54px] overflow-hidden">  
-                    <div className="absolute top-[12px] left-1/2 -translate-x-1/2 w-[118px] h-[34px] bg-black rounded-[20px] z-[150]">  
-                      <div className="absolute right-[18px] top-1/2 -translate-y-1/2 w-[10px] h-[10px] rounded-full" style={{ background: 'radial-gradient(circle at 38% 32%, #121228, #000)', boxShadow: 'inset 0 0 0 2px #1a1a2a, 0 0 4px rgba(30,30,120,0.5)' }}></div>  
-                    </div>  
-                    {renderHomeScreenContent(true)}
-                  </div>  
-                </div>  
+/* UPLOAD */
+.upload-z{border:1.5px dashed var(--line2);border-radius:8px;padding:18px 14px;text-align:center;cursor:pointer;transition:all .18s;display:flex;flex-direction:column;align-items:center;gap:5px;background:var(--surface2)}
+.upload-z:hover{border-color:var(--brand);background:var(--brand-light)}
+.upload-z:hover .uz-ic{color:var(--brand)}
+.uz-ic{color:var(--t3);transition:color .18s}
+.uz-main{font-size:13px;color:var(--t2);font-weight:500}
+.uz-sub{font-size:11px;color:var(--t3)}
+.ref-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:8px}
+.ref-th{position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;border:1.5px solid var(--line);transition:border-color .14s}
+.ref-th:hover{border-color:var(--brand)}
+.ref-th img{width:100%;height:100%;object-fit:cover;display:block}
+.ref-del{position:absolute;top:3px;right:3px;width:17px;height:17px;background:rgba(0,0,0,.5);backdrop-filter:blur(3px);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:10px;color:#fff;opacity:0;transition:opacity .14s}
+.ref-th:hover .ref-del{opacity:1}
+.ref-bar{display:flex;justify-content:space-between;align-items:center;margin-top:7px}
+.ref-count{font-size:11px;color:var(--t3)}
+.ref-clr{font-size:11px;color:var(--t3);cursor:pointer;border:none;background:none;padding:0;font-family:inherit;transition:color .14s}
+.ref-clr:hover{color:var(--brand)}
+
+/* GEN BTN */
+.gen-wrap{padding:14px 22px 22px}
+.btn-gen{
+  width:100%;padding:13px 20px;
+  background:var(--brand);color:#fff;
+  border:none;border-radius:var(--r);
+  font-size:14px;font-weight:500;cursor:pointer;
+  letter-spacing:.04em;font-family:inherit;
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  transition:all .18s;
+  box-shadow:0 2px 8px rgba(180,0,30,.22),0 1px 2px rgba(180,0,30,.15);
+}
+.btn-gen:hover{background:#950019;box-shadow:0 4px 16px rgba(180,0,30,.32),0 2px 4px rgba(180,0,30,.15);transform:translateY(-1px)}
+.btn-gen:active{transform:translateY(0)}
+.btn-gen:disabled{opacity:.32;cursor:not-allowed;transform:none;box-shadow:none}
+.shortcut{font-size:11px;opacity:.6;font-weight:400;letter-spacing:0;margin-left:auto}
+
+/* RIGHT */
+.right{display:flex;flex-direction:column;overflow:hidden}
+.result-area{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;padding:32px 40px;overflow-y:auto}
+
+/* EMPTY */
+.empty{text-align:center;display:flex;flex-direction:column;align-items:center}
+.empty-box{width:68px;height:68px;border-radius:18px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;margin-bottom:18px;box-shadow:var(--sh)}
+.empty-box svg{opacity:.12}
+.empty-t{font-size:15px;font-weight:500;color:var(--t2);margin-bottom:7px}
+.empty-s{font-size:13px;color:var(--t3);line-height:1.75}
+
+/* STATUS */
+.st{padding:10px 15px;border-radius:8px;font-size:13px;width:100%;max-width:740px;display:flex;align-items:center;gap:8px}
+.st::before{content:'';width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.st.info{background:#eff6ff;color:#1a6fa8;border:1px solid #bde0f9}.st.info::before{background:#3b9fdf}
+.st.err{background:#fff5f5;color:var(--brand);border:1px solid rgba(180,0,30,.18)}.st.err::before{background:var(--brand)}
+.st.ok{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}.st.ok::before{background:#22c55e}
+
+/* RESULT CARD */
+.rcard{width:100%;max-width:740px;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--sh)}
+.rimg{width:100%;display:block}
+.rfoot{padding:11px 15px;display:flex;gap:7px;align-items:center;border-top:1px solid var(--line)}
+.act{display:flex;align-items:center;gap:5px;padding:7px 13px;font-size:12px;font-weight:500;border:1px solid var(--line);border-radius:7px;background:var(--surface2);color:var(--t2);cursor:pointer;transition:all .14s;font-family:inherit}
+.act:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-light)}
+.rmeta{margin-left:auto;font-size:11px;color:var(--t3)}
+
+/* LOADER */
+.loader{display:flex;flex-direction:column;align-items:center;gap:18px}
+.spin-box{width:54px;height:54px;border-radius:15px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;box-shadow:var(--sh)}
+.spinner{width:22px;height:22px;border:2px solid var(--line2);border-top-color:var(--brand);border-radius:50%;animation:spin .85s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.l-label{font-size:14px;color:var(--t2);font-weight:500}
+.l-prog{width:140px;height:2px;background:var(--line);border-radius:2px;overflow:hidden}
+.l-bar{height:100%;background:var(--brand);animation:prog 3s ease-in-out infinite}
+@keyframes prog{0%{width:0%;margin-left:0}55%{width:65%}100%{width:0%;margin-left:100%}}
+.l-timer{font-size:12px;color:var(--t3)}
+
+/* DEBUG */
+.dbg-wrap{width:100%;max-width:740px;margin-top:2px}
+.dbg-toggle{font-size:11px;color:var(--t3);cursor:pointer;border:none;background:none;padding:0;font-family:inherit}
+.dbg-toggle:hover{color:var(--t2)}
+.dbg-log{display:none;margin-top:5px;font-size:11px;color:#999;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:9px 11px;max-height:130px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.6}
+.dbg-log.open{display:block}
+
+/* HISTORY */
+.hist-bar{border-top:1px solid var(--line);padding:11px 24px;display:none;background:var(--surface)}
+.hist-label{font-size:10px;font-weight:600;color:var(--t3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:7px}
+.hist-strip{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none}
+.hist-strip::-webkit-scrollbar{display:none}
+.ht{flex-shrink:0;width:54px;height:54px;border-radius:7px;overflow:hidden;border:1.5px solid var(--line);cursor:pointer;transition:all .14s}
+.ht:hover{border-color:var(--brand);transform:scale(1.06);box-shadow:0 2px 8px rgba(180,0,30,.18)}
+.ht img{width:100%;height:100%;object-fit:cover;display:block}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <div class="hdr-l">
+    <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 451 379" fill="#b4001e">
+      <path fill-rule="evenodd" d="M446.948,47.440 C435.821,107.363 419.93,165.642 394.571,221.543 C387.122,238.521 378.646,255.4 367.102,269.648 C359.147,279.738 349.815,287.592 335.767,287.166 C325.237,286.846 318.747,282.565 315.2,272.442 C311.399,262.701 310.137,252.453 309.74,242.211 C307.688,228.869 306.575,215.499 305.295,202.146 C305.151,200.653 305.38,199.62 303.436,197.546 C296.62,204.3 290.774,212.193 285.5,219.915 C274.64,234.558 263.327,249.351 251.696,263.467 C246.836,269.367 241.398,274.622 235.62,278.932 C214.494,292.924 194.823,284.313 190.693,259.885 C187.507,241.42 189.169,222.200 189.769,203.357 C189.901,199.209 188.813,198.139 184.875,197.823 C170.731,196.691 156.555,195.784 142.524,193.524 C142.273,193.484 142.29,193.401 141.733,193.286 C141.73,193.29 140.854,192.168 141.345,191.658 C144.428,188.453 149.64,188.648 151.956,186.617 C159.82,181.614 167.460,178.680 176.149,179.278 C189.470,180.195 192.397,180.106 193.285,173.905 C198.849,135.51 206.999,96.715 217.900,59.19 C222.873,41.823 228.625,24.746 240.77,10.436 C247.289,1.425 254.929,-1.439 261.594,1.928 C267.774,5.51 270.662,14.509 268.509,24.380 C263.539,47.174 255.300,69.56 249.826,91.721 C243.261,118.910 237.401,146.223 233.191,173.881 C232.668,177.324 232.935,179.619 237.38,180.865 C240.634,181.957 244.786,183.843 244.255,188.785 C243.748,193.511 240.238,195.680 235.829,196.409 C232.587,196.945 229.815,197.765 229.544,201.808 C228.609,215.768 225.458,229.532 225.827,243.608 C225.897,246.290 225.225,249.486 228.227,250.888 C231.528,252.429 233.690,249.683 235.640,247.679 C247.237,235.762 256.146,221.761 265.923,208.429 C275.710,195.83 284.630,181.77 295.531,168.579 C301.857,161.326 309.66,155.118 319.6,153.193 C330.700,150.929 337.940,155.138 341.76,166.660 C345.43,181.240 344.925,196.351 346.287,211.262 C347.83,219.990 347.647,228.740 348.405,237.472 C348.530,238.902 347.790,241.98 349.665,241.543 C351.821,242.55 352.441,239.657 353.175,238.253 C356.147,232.564 359.136,226.861 361.685,220.976 C382.826,172.166 397.249,121.282 408.185,69.348 C411.309,54.510 413.777,39.535 416.917,24.700 C418.363,17.867 420.426,11.160 425.749,5.960 C429.806,1.996 434.269,0.222 439.939,1.273 C445.746,2.805 448.317,7.230 449.484,12.713 C451.998,24.526 449.70,36.14 446.948,47.440 ZM144.817,174.512 C132.926,178.955 125.887,188.596 118.700,198.14 C104.249,216.952 92.351,237.532 80.727,258.268 C77.108,264.726 73.569,271.245 68.700,276.885 C66.799,279.88 64.852,281.330 62.585,283.124 C52.272,291.286 41.687,288.636 36.756,276.499 C32.626,266.332 31.179,255.451 29.298,244.730 C21.325,199.287 15.314,153.554 9.314,107.823 C6.306,84.889 3.230,61.960 0.705,38.971 C0.314,29.686 0.542,20.225 2.14,11.206 C3.525,5.880 7.971,1.405 14.385,0.654 C21.309,0.155 26.544,2.182 30.85,8.295 C35.509,17.658 36.790,28.188 38.308,38.541 C47.121,98.629 55.696,158.752 64.395,218.857 C65.84,223.618 66.101,228.331 67.290,234.834 C76.763,218.85 85.435,203.90 95.754,189.145 C103.74,179.252 110.830,169.760 121.168,162.749 C126.556,159.96 132.291,156.287 138.794,155.336 C144.828,154.455 151.101,157.621 152.352,162.76 C153.575,166.431 150.465,172.402 144.817,174.512 Z"/>
+    </svg>
+    <div class="hdr-sep"></div>
+    <span class="hdr-name">设计部 · AI 图片生成</span>
+  </div>
+  <div class="hdr-r">
+    <span class="chip-status"><span class="dot"></span>服务正常</span>
+    <span class="chip" id="modelChip">NanoBanana 2 · Google</span>
+  </div>
+</header>
+
+<div class="wrap">
+  <aside class="left">
+    <div class="left-scroll">
+
+      <div class="card">
+        <div class="card-hd"><div class="num">1</div><span class="card-title">描述画面内容</span></div>
+        <div class="card-bd">
+          <div class="prompt-box">
+            <textarea class="prompt-ta" id="prompt"
+              placeholder="用文字描述你想生成的画面，越详细效果越好……&#10;&#10;例：极简产品展示，白色背景，柔和漫射光，俯视角度，商业摄影风格，细腻材质"
+              oninput="updateCount()"></textarea>
+            <div class="prompt-btm">
+              <span class="prompt-hint">Ctrl+Enter 快速生成</span>
+              <span class="char-count" id="charCount">0 字</span>
+            </div>
+          </div>
+          <div class="tags">
+            <span class="tag" onclick="addTag('超写实摄影')">超写实摄影</span>
+            <span class="tag" onclick="addTag('极简风格')">极简风格</span>
+            <span class="tag" onclick="addTag('商业广告')">商业广告</span>
+            <span class="tag" onclick="addTag('电影质感')">电影质感</span>
+            <span class="tag" onclick="addTag('柔和漫射光')">柔和漫射光</span>
+            <span class="tag" onclick="addTag('8K 超高清')">8K 超高清</span>
+            <span class="tag" onclick="addTag('白色背景')">白色背景</span>
+            <span class="tag" onclick="addTag('产品展示')">产品展示</span>
+            <span class="tag" onclick="addTag('概念插画')">概念插画</span>
+            <span class="tag" onclick="addTag('品牌视觉')">品牌视觉</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-hd"><div class="num">2</div><span class="card-title">输出设置</span></div>
+        <div class="card-bd">
+          <div class="sg">
+            <div class="fg full-width">
+              <label>模型选择</label>
+              <div class="sel-wrap">
+                <select id="modelSelect" onchange="document.getElementById('modelChip').textContent = this.options[this.selectedIndex].text + ' · Google'">
+                  <option value="image_nanoBanana2">NanoBanana 2</option>
+                  <option value="image_nanoBanana_pro">NanoBanana Pro</option>
+                </select>
               </div>
-            </div>  
-          </div>  
-  
-          <div   
-            className="fixed bottom-[28px] left-1/2 -translate-x-1/2 bg-[#1c1c1e] text-white px-4 py-[9px] rounded-[11px] text-[13px] z-[9999] pointer-events-none whitespace-nowrap border-[0.5px] border-[#3a3a3c] transition-all duration-200"  
-            style={{  
-              opacity: toastMsg ? 1 : 0,  
-              transform: `translateX(-50%) translateY(${toastMsg ? '0' : '10px'})`  
-            }}  
-          >  
-            {toastMsg}  
-          </div>  
-        </div>  
-      );  
-    }  
-  
-    const root = ReactDOM.createRoot(document.getElementById('root'));  
-    root.render(<App />);  
-  </script>  
-</body>  
+            </div>
+
+            <div class="fg">
+              <label>分辨率</label>
+              <div class="sel-wrap">
+                <select id="size">
+                  <option value="1K">1K — 快速出图</option>
+                  <option value="2K">2K — 标准质量</option>
+                  <option value="4K">4K — 超清精细</option>
+                </select>
+              </div>
+            </div>
+            <div class="fg">
+              <label>画面比例</label>
+              <div class="sel-wrap">
+                <select id="aspectRatio">
+                  <option value="auto">Auto — 自动</option>
+                  <option value="1:1">1:1 — 正方形</option>
+                  <option value="16:9">16:9 — 宽屏</option>
+                  <option value="9:16">9:16 — 竖版</option>
+                  <option value="4:3">4:3</option>
+                  <option value="3:4">3:4</option>
+                  <option value="3:2">3:2</option>
+                  <option value="2:3">2:3</option>
+                  <option value="5:4">5:4</option>
+                  <option value="4:5">4:5</option>
+                  <option value="21:9">21:9 — 超宽</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-hd"><div class="num">3</div><span class="card-title">参考图（可选）</span></div>
+        <div class="card-bd">
+          <div class="upload-z" id="uploadZone" onclick="document.getElementById('refFiles').click()">
+            <svg class="uz-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <div class="uz-main">点击上传参考图</div>
+            <div class="uz-sub">支持 JPG / PNG / WEBP · 最多 14 张</div>
+          </div>
+          <input type="file" id="refFiles" accept="image/*" multiple style="display:none" onchange="handleRefImages(this)"/>
+          <div id="refPreview" style="display:none">
+            <div class="ref-grid" id="refThumbGrid"></div>
+            <div class="ref-bar">
+              <span class="ref-count" id="refCount"></span>
+              <button class="ref-clr" onclick="clearRefImages()">清除全部</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="gen-wrap">
+      <button class="btn-gen" id="genBtn" onclick="generate()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        开始生成图片
+        <span class="shortcut">Ctrl+Enter</span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="right">
+    <div class="result-area" id="resultArea">
+      <div class="empty" id="placeholder">
+        <div class="empty-box">
+          <svg width="30" height="30" viewBox="0 0 451 379" fill="#1a1814">
+            <path fill-rule="evenodd" d="M446.948,47.440 C435.821,107.363 419.93,165.642 394.571,221.543 C387.122,238.521 378.646,255.4 367.102,269.648 C359.147,279.738 349.815,287.592 335.767,287.166 C325.237,286.846 318.747,282.565 315.2,272.442 C311.399,262.701 310.137,252.453 309.74,242.211 C307.688,228.869 306.575,215.499 305.295,202.146 C305.151,200.653 305.38,199.62 303.436,197.546 C296.62,204.3 290.774,212.193 285.5,219.915 C274.64,234.558 263.327,249.351 251.696,263.467 C246.836,269.367 241.398,274.622 235.62,278.932 C214.494,292.924 194.823,284.313 190.693,259.885 C187.507,241.42 189.169,222.200 189.769,203.357 C189.901,199.209 188.813,198.139 184.875,197.823 C170.731,196.691 156.555,195.784 142.524,193.524 C142.273,193.484 142.29,193.401 141.733,193.286 C141.73,193.29 140.854,192.168 141.345,191.658 C144.428,188.453 149.64,188.648 151.956,186.617 C159.82,181.614 167.460,178.680 176.149,179.278 C189.470,180.195 192.397,180.106 193.285,173.905 C198.849,135.51 206.999,96.715 217.900,59.19 C222.873,41.823 228.625,24.746 240.77,10.436 C247.289,1.425 254.929,-1.439 261.594,1.928 C267.774,5.51 270.662,14.509 268.509,24.380 C263.539,47.174 255.300,69.56 249.826,91.721 C243.261,118.910 237.401,146.223 233.191,173.881 C232.668,177.324 232.935,179.619 237.38,180.865 C240.634,181.957 244.786,183.843 244.255,188.785 C243.748,193.511 240.238,195.680 235.829,196.409 C232.587,196.945 229.815,197.765 229.544,201.808 C228.609,215.768 225.458,229.532 225.827,243.608 C225.897,246.290 225.225,249.486 228.227,250.888 C231.528,252.429 233.690,249.683 235.640,247.679 C247.237,235.762 256.146,221.761 265.923,208.429 C275.710,195.83 284.630,181.77 295.531,168.579 C301.857,161.326 309.66,155.118 319.6,153.193 C330.700,150.929 337.940,155.138 341.76,166.660 C345.43,181.240 344.925,196.351 346.287,211.262 C347.83,219.990 347.647,228.740 348.405,237.472 C348.530,238.902 347.790,241.98 349.665,241.543 C351.821,242.55 352.441,239.657 353.175,238.253 C356.147,232.564 359.136,226.861 361.685,220.976 C382.826,172.166 397.249,121.282 408.185,69.348 C411.309,54.510 413.777,39.535 416.917,24.700 C418.363,17.867 420.426,11.160 425.749,5.960 C429.806,1.996 434.269,0.222 439.939,1.273 C445.746,2.805 448.317,7.230 449.484,12.713 C451.998,24.526 449.70,36.14 446.948,47.440 ZM144.817,174.512 C132.926,178.955 125.887,188.596 118.700,198.14 C104.249,216.952 92.351,237.532 80.727,258.268 C77.108,264.726 73.569,271.245 68.700,276.885 C66.799,279.88 64.852,281.330 62.585,283.124 C52.272,291.286 41.687,288.636 36.756,276.499 C32.626,266.332 31.179,255.451 29.298,244.730 C21.325,199.287 15.314,153.554 9.314,107.823 C6.306,84.889 3.230,61.960 0.705,38.971 C0.314,29.686 0.542,20.225 2.14,11.206 C3.525,5.880 7.971,1.405 14.385,0.654 C21.309,0.155 26.544,2.182 30.85,8.295 C35.509,17.658 36.790,28.188 38.308,38.541 C47.121,98.629 55.696,158.752 64.395,218.857 C65.84,223.618 66.101,228.331 67.290,234.834 C76.763,218.85 85.435,203.90 95.754,189.145 C103.74,179.252 110.830,169.760 121.168,162.749 C126.556,159.96 132.291,156.287 138.794,155.336 C144.828,154.455 151.101,157.621 152.352,162.76 C153.575,166.431 150.465,172.402 144.817,174.512 Z"/>
+          </svg>
+        </div>
+        <div class="empty-t">在左侧输入提示词开始创作</div>
+        <div class="empty-s">支持中英文描述 · 可上传参考图迁移风格<br>1K 约 30 秒出图 · 4K 约 2 分钟</div>
+      </div>
+    </div>
+    <div class="hist-bar" id="histBar">
+      <div class="hist-label">本次会话记录</div>
+      <div class="hist-strip" id="histStrip"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_KEY='fQJtZRrTX1C64ilT838JmR9g6R';
+const histUrls=[];let refB64=[];let pollT=null;let elapT=null;let elapsed=0;
+
+function updateCount(){const v=document.getElementById('prompt').value;document.getElementById('charCount').textContent=v.length+' 字'}
+function addTag(t){const ta=document.getElementById('prompt');const v=ta.value.trim();ta.value=v?v+'，'+t:t;updateCount();ta.focus()}
+
+function handleRefImages(input){
+  const files=Array.from(input.files);if(!files.length)return;
+  if(refB64.length+files.length>14){alert('最多上传 14 张参考图');return}
+  files.forEach(f=>{
+    const r=new FileReader();
+    r.onload=e=>{
+      // e.target.result 是带有 data:image/png;base64, 前缀的标准格式。
+      // 大多数接受 Base64 的接口兼容 Data URL 前缀。如果后端报错“图片格式不对”，可以替换为： e.target.result.split(',')[1]
+      refB64.push(e.target.result);
+      renderRef();
+    };
+    r.readAsDataURL(f)
+  });
+  input.value='';
+}
+function renderRef(){
+  const prev=document.getElementById('refPreview'),grid=document.getElementById('refThumbGrid'),cnt=document.getElementById('refCount');
+  prev.style.display=refB64.length?'block':'none';grid.innerHTML='';
+  refB64.forEach((b,i)=>{
+    const w=document.createElement('div');w.className='ref-th';
+    const img=document.createElement('img');img.src=b;
+    const d=document.createElement('div');d.className='ref-del';d.textContent='×';
+    d.onclick=e=>{e.stopPropagation();refB64.splice(i,1);renderRef()};
+    w.appendChild(img);w.appendChild(d);grid.appendChild(w);
+  });
+  cnt.textContent='已选 '+refB64.length+' 张';
+}
+function clearRefImages(){refB64=[];renderRef()}
+
+function showLoader(){
+  const a=document.getElementById('resultArea');
+  a.style.alignItems='center';a.style.justifyContent='center';
+  a.innerHTML=`<div class="loader"><div class="spin-box"><div class="spinner"></div></div><div class="l-label" id="lLabel">提交任务中…</div><div class="l-prog"><div class="l-bar"></div></div><div class="l-timer" id="lTimer"></div></div>`;
+}
+
+function showResult(url){
+  clearInterval(elapT);
+  const a=document.getElementById('resultArea');
+  a.innerHTML='';a.style.alignItems='flex-start';a.style.justifyContent='flex-start';
+  const bar=document.createElement('div');bar.className='st ok';bar.textContent='生成成功 · 用时 '+elapsed+' 秒';a.appendChild(bar);
+  const card=document.createElement('div');card.className='rcard';
+  const img=document.createElement('img');img.className='rimg';img.src=url;card.appendChild(img);
+  const foot=document.createElement('div');foot.className='rfoot';
+  const dl=document.createElement('button');dl.className='act';
+  dl.innerHTML=`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 下载图片`;
+  dl.onclick=()=>{const a=document.createElement('a');a.href=url;a.download='hewu_'+Date.now()+'.jpg';a.target='_blank';a.click()};
+  const op=document.createElement('button');op.className='act';
+  op.innerHTML=`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg> 新标签打开`;
+  op.onclick=()=>window.open(url,'_blank');
+  const cp=document.createElement('button');cp.className='act';
+  cp.innerHTML=`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> 复制链接`;
+  cp.onclick=()=>{navigator.clipboard.writeText(url).then(()=>{cp.querySelector('svg').nextSibling.textContent=' 已复制 ✓';setTimeout(()=>{cp.querySelector('svg').nextSibling.textContent=' 复制链接'},2000)})};
+  const meta=document.createElement('span');meta.className='rmeta';
+  meta.textContent=document.getElementById('size').value+' · '+document.getElementById('aspectRatio').value;
+  foot.appendChild(dl);foot.appendChild(op);foot.appendChild(cp);foot.appendChild(meta);
+  card.appendChild(foot);a.appendChild(card);
+  const dw=document.createElement('div');dw.className='dbg-wrap';
+  dw.innerHTML='<button class="dbg-toggle" onclick="toggleDbg()">查看调试日志</button><pre class="dbg-log" id="dbgLog"></pre>';
+  a.appendChild(dw);addHist(url);document.getElementById('genBtn').disabled=false;
+}
+
+function showError(msg){
+  clearInterval(elapT);
+  const a=document.getElementById('resultArea');a.innerHTML='';a.style.alignItems='center';a.style.justifyContent='center';
+  const bar=document.createElement('div');bar.className='st err';bar.textContent=msg;a.appendChild(bar);
+  const dw=document.createElement('div');dw.className='dbg-wrap';
+  dw.innerHTML='<button class="dbg-toggle" onclick="toggleDbg()">查看调试日志</button><pre class="dbg-log open" id="dbgLog"></pre>';
+  a.appendChild(dw);document.getElementById('genBtn').disabled=false;
+}
+
+function toggleDbg(){const l=document.getElementById('dbgLog');if(l)l.classList.toggle('open')}
+function logDbg(msg){
+  let l=document.getElementById('dbgLog');
+  if(!l){const a=document.getElementById('resultArea');const dw=document.createElement('div');dw.className='dbg-wrap';
+    dw.innerHTML='<button class="dbg-toggle" onclick="toggleDbg()">查看调试日志</button><pre class="dbg-log open" id="dbgLog"></pre>';
+    a.appendChild(dw);l=document.getElementById('dbgLog')}
+  l.textContent='['+new Date().toLocaleTimeString()+'] '+msg+'\n'+l.textContent;
+}
+
+function addHist(url){
+  histUrls.unshift(url);if(histUrls.length>12)histUrls.pop();
+  const bar=document.getElementById('histBar'),strip=document.getElementById('histStrip');
+  bar.style.display='block';strip.innerHTML='';
+  histUrls.forEach(u=>{const d=document.createElement('div');d.className='ht';const img=document.createElement('img');img.src=u;d.onclick=()=>window.open(u,'_blank');d.appendChild(img);strip.appendChild(d)});
+}
+
+function startTimer(){
+  elapsed=0;clearInterval(elapT);
+  elapT=setInterval(()=>{elapsed++;const t=document.getElementById('lTimer');if(t)t.textContent='已等待 '+elapsed+'s'},1000);
+}
+
+async function pollResult(id){
+  // 修改为最大 160 次尝试 (160 * 3s = 480s = 8分钟)
+  const max=160;let tries=0;
+  const run=async()=>{
+    if(tries++>max){showError('超时（约 8 分钟），请重试或检查账户余额');return}
+    try{
+      const r=await fetch('https://api.wuyinkeji.com/api/async/detail?key='+encodeURIComponent(API_KEY)+'&id='+encodeURIComponent(id));
+      const d=await r.json();logDbg('第'+tries+'次: '+JSON.stringify(d));
+      if(d.code===200&&d.data){
+        const data=d.data;
+        const iu=data.output||(data.images&&data.images[0])||data.url||data.image||data.result||data.img||data.file_url||data.img_url;
+        const is=Array.isArray(iu)?iu[0]:String(iu||'');
+        if(is&&(is.startsWith('http')||is.startsWith('//'))){showResult(is);return}
+        const st=String(data.status||'').toLowerCase();
+        if(st==='fail'||st==='failed'||st==='error'){showError('生成失败：'+(data.error||data.err_msg||d.msg||JSON.stringify(data)));return}
+        const lb=document.getElementById('lLabel');if(lb)lb.textContent='图片生成中，请耐心等待…';
+        pollT=setTimeout(run,3000);
+      }else if(d.code!==200){showError('接口错误 code='+d.code+'：'+(d.msg||JSON.stringify(d)))}
+      else{pollT=setTimeout(run,3000)}
+    }catch(e){logDbg('异常: '+e.message);showError('查询失败：'+e.message)}
+  };run();
+}
+
+async function generate(){
+  const prompt=document.getElementById('prompt').value.trim();
+  if(!prompt){alert('请输入提示词');return}
+  if(pollT)clearTimeout(pollT);clearInterval(elapT);
+  document.getElementById('genBtn').disabled=true;
+  showLoader();
+  const body={prompt,size:document.getElementById('size').value,aspectRatio:document.getElementById('aspectRatio').value};
+  if(refB64.length>0)body.urls=refB64.map(b=>b.split(',')[1]);
+  try{
+    // 获取当前下拉框选中的模型接口地址
+    const modelEndpoint = document.getElementById('modelSelect').value;
+    const r=await fetch('https://api.wuyinkeji.com/api/async/' + modelEndpoint, {
+      method:'POST',
+      headers:{'Authorization':API_KEY,'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+
+    const d=await r.json();logDbg('提交: '+JSON.stringify(d));
+    if(d.code===200&&d.data&&d.data.id){startTimer();pollResult(d.data.id)}
+    else{showError('提交失败 code='+d.code+'：'+(d.msg||JSON.stringify(d)))}
+  }catch(e){showError('提交失败：'+e.message)}
+}
+
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey))generate()});
+</script>
+</body>
 </html>
