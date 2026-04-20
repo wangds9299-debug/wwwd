@@ -1437,8 +1437,6 @@ async function pollOutpaintStatus(t) {
                     created_at: new Date().toISOString()
                 });
 
-                try { await loadHistory('image'); } catch(e){}
-
                 // 从 runningTasks 移除成功任务
                 const idx = runningTasks.findIndex(x => x.id === t.id);
                 if (idx !== -1) runningTasks.splice(idx, 1);
@@ -2341,8 +2339,14 @@ async function loadHistory(type) {
     try {
         const imgResp = await safeProxyFetch(`/api/generations/list?page=1&limit=20&type=image`);
         if (imgResp.ok && Array.isArray(imgResp.json.data)) {
-            imageHistoryItems = imgResp.json.data;
-            imageHistoryItems.forEach(item => { if (item.image_url) item.image_url = item.image_url.replace(/^http:\/\//, 'https://'); });
+            const fetchedItems = imgResp.json.data;
+            fetchedItems.forEach(item => { if (item.image_url) item.image_url = item.image_url.replace(/^http:\/\//, 'https://'); });
+
+            // Preserve locally optimistic items that aren't yet in the fetched items
+            const fetchedIds = new Set(fetchedItems.map(i => i.id));
+            const optimisticItems = imageHistoryItems.filter(item => String(item.id).startsWith('local_') && !fetchedIds.has(item.id));
+
+            imageHistoryItems = [...optimisticItems, ...fetchedItems];
         }
         const vidResp = await safeProxyFetch(`/api/generations/list?page=1&limit=20&type=video`);
         if (vidResp.ok && Array.isArray(vidResp.json.data)) {
@@ -2736,9 +2740,6 @@ async function pollTaskStatus(t) {
                             created_at: new Date().toISOString()
                         });
                     });
-
-                    // 重新加载历史（后端已经把这次生成存进去了）
-                    try { await loadHistory('image'); } catch(e){}
                     // 从 runningTasks 移除成功任务，防止和历史卡片重复
                     const idx = runningTasks.findIndex(x => x.id === t.id);
                     if (idx !== -1) runningTasks.splice(idx, 1);
