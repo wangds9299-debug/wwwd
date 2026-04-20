@@ -1421,8 +1421,29 @@ async function pollOutpaintStatus(t) {
             const d = r.json;
             if(d.status==='success' && d.url){
                 t.status='success'; t.resultUrls=[d.url];
-                clearInterval(t.timer); addHist(d.url); renderResults(); checkUserInfo();
-                saveToHistory('outpaint', t.prompt, [d.url], 'image', t.refUrls);
+                clearInterval(t.timer); addHist(d.url); checkUserInfo();
+                await saveToHistory('outpaint', t.prompt, [d.url], 'image', t.refUrls);
+
+                // Optimistic update
+                imageHistoryItems.unshift({
+                    id: 'local_' + Date.now() + Math.random(),
+                    image_url: d.url,
+                    model: 'outpaint',
+                    prompt: t.prompt,
+                    type: 'image',
+                    ref_urls: JSON.stringify(t.refUrls || []),
+                    aspect_ratio: t.aspectRatio,
+                    size: t.size,
+                    created_at: new Date().toISOString()
+                });
+
+                try { await loadHistory('image'); } catch(e){}
+
+                // 从 runningTasks 移除成功任务
+                const idx = runningTasks.findIndex(x => x.id === t.id);
+                if (idx !== -1) runningTasks.splice(idx, 1);
+
+                renderResults();
                 saveRunningTasksToStorage(); return;
             }
             if(d.status==='error'){
@@ -2319,12 +2340,12 @@ async function loadHistory(type) {
     // Load both types
     try {
         const imgResp = await safeProxyFetch(`/api/generations/list?page=1&limit=20&type=image`);
-        if (imgResp.ok && imgResp.json.data) {
+        if (imgResp.ok && Array.isArray(imgResp.json.data)) {
             imageHistoryItems = imgResp.json.data;
             imageHistoryItems.forEach(item => { if (item.image_url) item.image_url = item.image_url.replace(/^http:\/\//, 'https://'); });
         }
         const vidResp = await safeProxyFetch(`/api/generations/list?page=1&limit=20&type=video`);
-        if (vidResp.ok && vidResp.json.data) {
+        if (vidResp.ok && Array.isArray(vidResp.json.data)) {
             videoHistoryItems = vidResp.json.data;
             videoHistoryItems.forEach(item => { if (item.image_url) item.image_url = item.image_url.replace(/^http:\/\//, 'https://'); });
         }
@@ -2700,6 +2721,22 @@ async function pollTaskStatus(t) {
                 if(t.resultUrls.length) {
                     t.resultUrls.forEach(u=>addHist(u));
                     await saveToHistory(t.model, t.prompt, t.resultUrls, 'image', readyRefs, t.size, t.aspectRatio);
+
+                    // Optimistic update
+                    t.resultUrls.forEach(url => {
+                        imageHistoryItems.unshift({
+                            id: 'local_' + Date.now() + Math.random(),
+                            image_url: url,
+                            model: t.model,
+                            prompt: t.prompt,
+                            type: 'image',
+                            ref_urls: JSON.stringify(readyRefs || []),
+                            aspect_ratio: t.aspectRatio,
+                            size: t.size,
+                            created_at: new Date().toISOString()
+                        });
+                    });
+
                     // 重新加载历史（后端已经把这次生成存进去了）
                     try { await loadHistory('image'); } catch(e){}
                     // 从 runningTasks 移除成功任务，防止和历史卡片重复
