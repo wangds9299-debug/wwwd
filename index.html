@@ -1433,7 +1433,7 @@ async function pollOutpaintStatus(t) {
                 await saveToHistory('outpaint', t.prompt, [d.url], 'image', t.refUrls);
 
                 // Optimistic update
-                imageHistoryItems.unshift({
+                const optItem = {
                     id: 'local_' + Date.now() + Math.random(),
                     image_url: d.url,
                     model: 'outpaint',
@@ -1443,7 +1443,9 @@ async function pollOutpaintStatus(t) {
                     aspect_ratio: t.aspectRatio,
                     size: t.size,
                     created_at: new Date().toISOString()
-                });
+                };
+                imageHistoryItems.unshift(optItem);
+                addOptimisticHistory(optItem);
 
                 // 从 runningTasks 移除成功任务
                 const idx = runningTasks.findIndex(x => x.id === t.id);
@@ -1531,6 +1533,15 @@ window._userHasScrolledUp = false;
 
 
 // ======== 任务持久化（刷新不丢失）========
+function addOptimisticHistory(item) {
+    try {
+        const h = JSON.parse(localStorage.getItem('haotu_optimistic_history') || '[]');
+        h.unshift(item);
+        if (h.length > 50) h.pop(); // limit buffer
+        localStorage.setItem('haotu_optimistic_history', JSON.stringify(h));
+    } catch(e){}
+}
+
 function saveRunningTasksToStorage() {
     try {
         const toSave = runningTasks.map(t => ({
@@ -1555,6 +1566,9 @@ function restoreRunningTasks() {
         if(!Array.isArray(items)||!items.length) return;
         
         items.forEach(item => {
+            // 防幽灵任务：只恢复真正处于 loading 状态的任务
+            if (item.status !== 'loading') return;
+
             const t = {
                 id: item.id, prompt: item.prompt, model: item.model,
                 size: item.size, aspectRatio: item.aspectRatio,
@@ -2350,11 +2364,20 @@ async function loadHistory(type) {
             const fetchedItems = imgResp.json.data;
             fetchedItems.forEach(item => { if (item.image_url) item.image_url = item.image_url.replace(/^http:\/\//, 'https://'); });
 
-            // Preserve locally optimistic items that aren't yet in the fetched items
-            const fetchedUrls = new Set(fetchedItems.map(i => i.image_url));
-            const optimisticItems = imageHistoryItems.filter(item => String(item.id).startsWith('local_') && !fetchedUrls.has(item.image_url));
+            // Integrate persistent optimistic buffer from localStorage
+            let optHistory = [];
+            try { optHistory = JSON.parse(localStorage.getItem('haotu_optimistic_history') || '[]'); } catch(e){}
 
-            imageHistoryItems = [...optimisticItems, ...fetchedItems];
+            const fetchedUrls = new Set(fetchedItems.map(i => i.image_url));
+
+            // Remove items from optimistic buffer if they finally appeared in the fetched results
+            const remainingOptItems = optHistory.filter(item => !fetchedUrls.has(item.image_url));
+
+            // Save cleaned up buffer back to localStorage
+            try { localStorage.setItem('haotu_optimistic_history', JSON.stringify(remainingOptItems)); } catch(e){}
+
+            // Update the display array
+            imageHistoryItems = [...remainingOptItems, ...fetchedItems];
         }
         const vidResp = await safeProxyFetch(`/api/generations/list?page=1&limit=20&type=video`);
         if (vidResp.ok && Array.isArray(vidResp.json.data)) {
@@ -2592,6 +2615,23 @@ async function deleteGeneration(id, btn) {
     showConfirmDelete('确认删除', '此操作将永久删除该生成记录，确定继续吗？', async () => {
         const origText = btn.textContent;
         btn.textContent = '...';
+
+        // Remove from optimistic history if it's a local ID
+        if (String(id).startsWith('local_')) {
+            try {
+                let optHistory = JSON.parse(localStorage.getItem('haotu_optimistic_history') || '[]');
+                optHistory = optHistory.filter(i => i.id !== id);
+                localStorage.setItem('haotu_optimistic_history', JSON.stringify(optHistory));
+            } catch(e) {}
+
+            const card = document.getElementById('hist-card-' + id);
+            if (card) { card.style.opacity = '0'; card.style.transition = 'opacity 0.3s'; setTimeout(() => card.remove(), 300); }
+            imageHistoryItems = imageHistoryItems.filter(i => i.id !== id);
+            notify('已删除');
+            renderResults();
+            return;
+        }
+
         try {
             const resp = await safeProxyFetch('/api/generations/' + id, { method: 'DELETE' });
             if (resp.ok) {
@@ -2736,7 +2776,7 @@ async function pollTaskStatus(t) {
 
                     // Optimistic update
                     t.resultUrls.forEach(url => {
-                        imageHistoryItems.unshift({
+                        const optItem = {
                             id: 'local_' + Date.now() + Math.random(),
                             image_url: url,
                             model: t.model,
@@ -2746,7 +2786,9 @@ async function pollTaskStatus(t) {
                             aspect_ratio: t.aspectRatio,
                             size: t.size,
                             created_at: new Date().toISOString()
-                        });
+                        };
+                        imageHistoryItems.unshift(optItem);
+                        addOptimisticHistory(optItem);
                     });
                     // 从 runningTasks 移除成功任务，防止和历史卡片重复
                     const idx = runningTasks.findIndex(x => x.id === t.id);
