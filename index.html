@@ -1532,6 +1532,17 @@ window._userHasScrolledUp = false;
 })();
 
 
+// Helper to normalize image URLs for strict deduplication
+function getUrlKey(url) {
+    if (!url) return '';
+    try {
+        const u = new URL(url);
+        return u.host + u.pathname;
+    } catch (e) {
+        return url.replace(/^https?:\/\//, '').split('?')[0];
+    }
+}
+
 // ======== 任务持久化（刷新不丢失）========
 function addOptimisticHistory(item) {
     try {
@@ -2368,10 +2379,10 @@ async function loadHistory(type) {
             let optHistory = [];
             try { optHistory = JSON.parse(localStorage.getItem('haotu_optimistic_history') || '[]'); } catch(e){}
 
-            const fetchedUrls = new Set(fetchedItems.map(i => i.image_url));
+            const fetchedKeys = new Set(fetchedItems.map(i => getUrlKey(i.image_url)));
 
             // Remove items from optimistic buffer if they finally appeared in the fetched results
-            const remainingOptItems = optHistory.filter(item => !fetchedUrls.has(item.image_url));
+            const remainingOptItems = optHistory.filter(item => !fetchedKeys.has(getUrlKey(item.image_url)));
 
             // Save cleaned up buffer back to localStorage
             try { localStorage.setItem('haotu_optimistic_history', JSON.stringify(remainingOptItems)); } catch(e){}
@@ -2816,9 +2827,20 @@ function renderResults() {
     const ph=document.getElementById('welcome');
     
     // Build combined waterfall: history (oldest first) + active tasks (newest at bottom)
-    const histItems = currentMode==='image' ? imageHistoryItems : [];
+    let rawHistItems = currentMode==='image' ? imageHistoryItems : [];
     const activeTasks = runningTasks.filter(t=>t.status!=='idle');
     
+    // Deduplicate history items by URL to prevent ghost/optimistic duplicates
+    const seenKeys = new Set();
+    const histItems = [];
+    rawHistItems.forEach(item => {
+        const key = getUrlKey(item.image_url);
+        if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            histItems.push(item);
+        }
+    });
+
     if(!histItems.length && !activeTasks.length){
         grid.style.display='none';ph.classList.remove('hidden');return;
     }
